@@ -1,4 +1,4 @@
-import Fastify from 'fastify';
+import Fastify, { type FastifyError } from 'fastify';
 import cors from '@fastify/cors';
 import formbody from '@fastify/formbody';
 import cookie from '@fastify/cookie';
@@ -26,7 +26,7 @@ export async function buildOAuthServer() {
   await tokenCryptoManager.initializeKeys();
 
   // Global RFC 6749 compliant error handler
-  app.setErrorHandler((error, _request, reply) => {
+  app.setErrorHandler((error: FastifyError | Error, _request, reply) => {
     if (error instanceof OAuthProtocolError) {
       reply.header('Cache-Control', 'no-store');
       return reply.status(error.statusCode).send({
@@ -35,7 +35,7 @@ export async function buildOAuthServer() {
       });
     }
 
-    if (error.validation) {
+    if ('validation' in error && error.validation) {
       reply.header('Cache-Control', 'no-store');
       return reply.status(400).send({
         error: 'invalid_request',
