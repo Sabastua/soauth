@@ -249,6 +249,19 @@ describe('OAuth 2.0 & OIDC Authorization Code + PKCE Flow & Replay Revocation', 
     assert.equal(verifiedIdToken.payload.nonce, nonce);
     assert.equal(verifiedIdToken.payload.email, 'architect@safaricom.co.ke');
 
+    // 4b. Call GET /userinfo with the issued Bearer access_token
+    const userInfoResponse = await app.inject({
+      method: 'GET',
+      url: '/userinfo',
+      headers: {
+        authorization: `Bearer ${tokens.access_token}`,
+      },
+    });
+    assert.equal(userInfoResponse.statusCode, 200);
+    const userInfo = userInfoResponse.json();
+    assert.equal(userInfo.sub, testUserId);
+    assert.equal(userInfo.email, 'architect@safaricom.co.ke');
+
     // 5. Security Constraint #4: Present the exact same Authorization Code a second time (Replay Attack!)
     const replayResponse = await app.inject({
       method: 'POST',
@@ -276,7 +289,7 @@ describe('OAuth 2.0 & OIDC Authorization Code + PKCE Flow & Replay Revocation', 
       assert.equal(rt.is_revoked, true, 'Expected issued refresh token to be revoked on code replay');
     }
 
-    // 6. Attempt to use the previously issued refresh_token after the replay breach -> must fail!
+    // 6. Attempt to use the previously issued refresh_token or access_token after the replay breach -> must fail!
     const refreshAfterReplayResponse = await app.inject({
       method: 'POST',
       url: '/token',
@@ -289,5 +302,14 @@ describe('OAuth 2.0 & OIDC Authorization Code + PKCE Flow & Replay Revocation', 
     });
     assert.equal(refreshAfterReplayResponse.statusCode, 400);
     assert.equal(refreshAfterReplayResponse.json().error, 'invalid_grant');
+
+    const userInfoAfterReplayResponse = await app.inject({
+      method: 'GET',
+      url: '/userinfo',
+      headers: {
+        authorization: `Bearer ${tokens.access_token}`,
+      },
+    });
+    assert.equal(userInfoAfterReplayResponse.statusCode, 401);
   });
 });

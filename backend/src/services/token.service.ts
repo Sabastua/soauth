@@ -250,6 +250,121 @@ export class TokenService {
   }
 
   /**
+   * OpenID Connect Core 1.0 Section 5.3 UserInfo Endpoint logic.
+   * Validates the Bearer Access Token, ensures the bound session is still active,
+   * and returns claims filtered by the granted scopes.
+   */
+  public async getUserInfo(bearerToken: string): Promise<{
+    sub: string;
+    email?: string;
+    email_verified?: boolean;
+    updated_at?: number;
+  }> {
+    let payload;
+    try {
+      payload = await tokenCryptoManager.verifyAccessToken(bearerToken);
+    } catch {
+      throw new OAuthProtocolError('invalid_grant', 'Access token is invalid or expired.', 401);
+    }
+
+    const grantedScopes = payload.scope.split(' ');
+    if (!grantedScopes.includes('openid')) {
+      throw new OAuthProtocolError(
+        'invalid_scope',
+        'Access token does not include the required openid scope.',
+        403,
+      );
+    }
+
+    // Ensure the underlying session has not been revoked (e.g., via code replay or explicit logout)
+    const [session, user] = await Promise.all([
+      sessionAndTokenRepository.findActiveSessionById(payload.sid),
+      userRepository.findById(payload.sub),
+    ]);
+
+    if (!session || !user) {
+      throw new OAuthProtocolError('invalid_grant', 'User session is no longer active.', 401);
+    }
+
+    return {
+      sub: user.id,
+      ...(grantedScopes.includes('email')
+        ? { email: user.email, email_verified: true }
+        : {}),
+      ...(grantedScopes.includes('profile')
+        ? { updated_at: Math.floor(new Date(user.updated_at).getTime() / 1000) }
+        : {}),
+    };
+  }
+
+  /**
+   * RFC 7009 OAuth 2.0 Token Revocation.
+   * Authenticates the client and revokes the target refresh token (and its session if requested).
+   */
+  public async revokeToken(params: {
+    token: string;
+    token_type_hint?: 'refresh_token' | 'access_token';
+    client_id: string;
+    client_secret?: string;
+  }): Promise<void> {
+    const client = await this.authenticateClient(params.client_id, params.client_secret);
+    const tokenHash = sha256Hex(params.token);
+
+    const storedRefreshToken = await sessionAndTokenRepository.findRefreshTokenByHash(tokenHash);
+    if (storedRefreshToken && constantTimeStringEqual(storedRefreshToken.client_id, client.id)) {
+      await sessionAndTokenRepository.revokeRefreshTokenById(storedRefreshToken.id);
+      return;
+    }
+
+    // If the caller passed an access_token JWT, revoke the bound session
+    try {
+      const payload = await tokenCryptoManager.verifyAccessToken(params.token);
+      if (constantTimeStringEqual(payload.client_id, client.id)) {
+        await sessionAndTokenRepository.revokeEntireSessionCascade(
+          payload.sid,
+          'CLIENT_EXPLICIT_REVOCATION',
+        );
+      }
+    } catch {
+      // RFC 7009 Section 2.2: invalid tokens do not cause an error response
+    }
+  }
+
+  /**
+   * RFC 7662 OAuth 2.0 Token Introspection.
+   */
+  public async introspectToken(params: {
+    token: string;
+    client_id: string;
+    client_secret?: string;
+  }): Promise<Record<string, unknown>> {
+    await this.authenticateClient(params.client_id, params.client_secret);
+
+    try {
+      const payload = await tokenCryptoManager.verifyAccessToken(params.token);
+      const session = await sessionAndTokenRepository.findActiveSessionById(payload.sid);
+      if (!session) {
+        return { active: false };
+      }
+
+      return {
+        active: true,
+        scope: payload.scope,
+        client_id: payload.client_id,
+        sub: payload.sub,
+        exp: payload.exp,
+        iat: payload.iat,
+        iss: payload.iss,
+        jti: payload.jti,
+        sid: payload.sid,
+        token_type: 'Bearer',
+      };
+    } catch {
+      return { active: false };
+    }
+  }
+
+  /**
    * Verifies Confidential Client credentials using Argon2id.
    */
   private async authenticateClient(clientId: string, clientSecret?: string) {

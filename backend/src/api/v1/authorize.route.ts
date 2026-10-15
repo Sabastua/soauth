@@ -1,9 +1,16 @@
 import type { FastifyInstance } from 'fastify';
 import { authorizationService } from '../../services/auth.service.js';
+import { createRateLimitHook } from '../../core/ratelimit.js';
 import {
   OAuthProtocolError,
   type AuthorizeRequestQuery,
 } from '../../types/oauth.types.js';
+
+const loginRateLimit = createRateLimitHook({
+  namespace: 'login_consent',
+  maxRequests: 10,
+  windowSeconds: 60,
+});
 
 /**
  * GET /authorize & POST /authorize/consent
@@ -111,6 +118,7 @@ export async function registerAuthorizeRoutes(app: FastifyInstance): Promise<voi
   }>(
     '/api/v1/oauth/login-consent',
     {
+      preHandler: [loginRateLimit],
       schema: {
         body: {
           type: 'object',

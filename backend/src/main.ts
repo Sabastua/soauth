@@ -6,6 +6,7 @@ import { tokenCryptoManager } from './core/tokens.js';
 import { registerAuthorizeRoutes } from './api/v1/authorize.route.js';
 import { registerTokenRoutes } from './api/v1/token.route.js';
 import { registerDiscoveryAndJwksRoutes } from './api/v1/keys.route.js';
+import { registerUserInfoRoutes } from './api/v1/userinfo.route.js';
 import { OAuthProtocolError } from './types/oauth.types.js';
 
 export async function buildOAuthServer() {
@@ -53,6 +54,7 @@ export async function buildOAuthServer() {
   await app.register(registerAuthorizeRoutes);
   await app.register(registerTokenRoutes);
   await app.register(registerDiscoveryAndJwksRoutes);
+  await app.register(registerUserInfoRoutes);
 
   return app;
 }

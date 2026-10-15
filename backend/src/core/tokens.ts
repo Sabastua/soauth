@@ -25,9 +25,10 @@ interface ActiveSigningKeyMaterial {
  */
 export class TokenCryptoManager {
   private activeKey: ActiveSigningKeyMaterial | null = null;
+  private retiredPublicKeys: Map<string, ActiveSigningKeyMaterial> = new Map();
   private readonly issuer: string;
   private readonly alg: SupportedSigningAlg;
-  private readonly kid: string;
+  private kid: string;
 
   constructor(
     issuer = process.env.OIDC_ISSUER ?? 'https://auth.soauth.internal',
@@ -45,7 +46,22 @@ export class TokenCryptoManager {
    */
   public async initializeKeys(): Promise<void> {
     if (this.activeKey) return;
+    this.activeKey = await this.generateKeyMaterial(this.kid);
+  }
 
+  /**
+   * Rotates the active signing key while preserving the previous key in `retiredPublicKeys`
+   * so tokens signed immediately prior to rotation continue to validate via JWKS.
+   */
+  public async rotateSigningKey(newKid: string): Promise<void> {
+    if (this.activeKey) {
+      this.retiredPublicKeys.set(this.activeKey.kid, this.activeKey);
+    }
+    this.kid = newKid;
+    this.activeKey = await this.generateKeyMaterial(newKid);
+  }
+
+  private async generateKeyMaterial(kid: string): Promise<ActiveSigningKeyMaterial> {
     const { publicKey, privateKey } = await generateKeyPair(this.alg, {
       modulusLength: 2048,
       extractable: true,
@@ -54,13 +70,13 @@ export class TokenCryptoManager {
     const exportedPublicJwk = await exportJWK(publicKey);
     const publicJwk: JWK = {
       ...exportedPublicJwk,
-      kid: this.kid,
+      kid,
       alg: this.alg,
       use: 'sig',
     };
 
-    this.activeKey = {
-      kid: this.kid,
+    return {
+      kid,
       alg: this.alg,
       privateKey,
       publicKey,
@@ -148,25 +164,36 @@ export class TokenCryptoManager {
   }
 
   /**
-   * Verifies a signed Access Token against the active public key and issuer.
+   * Verifies a signed Access Token against the active or recently rotated public keys.
    */
   public async verifyAccessToken(token: string, expectedAudience?: string): Promise<AccessTokenPayload> {
-    const key = this.ensureKeyInitialized();
-    const { payload } = await jwtVerify<AccessTokenPayload>(token, key.publicKey, {
-      issuer: this.issuer,
-      algorithms: [key.alg],
-      ...(expectedAudience !== undefined ? { audience: expectedAudience } : {}),
-    });
-    return payload;
+    const active = this.ensureKeyInitialized();
+    const candidateKeys = [active, ...this.retiredPublicKeys.values()];
+
+    let lastError: unknown;
+    for (const keyMat of candidateKeys) {
+      try {
+        const { payload } = await jwtVerify<AccessTokenPayload>(token, keyMat.publicKey, {
+          issuer: this.issuer,
+          algorithms: [keyMat.alg],
+          ...(expectedAudience !== undefined ? { audience: expectedAudience } : {}),
+        });
+        return payload;
+      } catch (err) {
+        lastError = err;
+      }
+    }
+    throw lastError ?? new Error('Token signature verification failed');
   }
 
   /**
-   * Returns the RFC 7517 JSON Web Key Set (JWKS) containing only public key parameters.
+   * Returns the RFC 7517 JSON Web Key Set (JWKS) containing active and retiring public keys.
    */
   public getPublicJwks(): { keys: JWK[] } {
-    const key = this.ensureKeyInitialized();
+    const active = this.ensureKeyInitialized();
+    const retired = Array.from(this.retiredPublicKeys.values()).map((k) => k.publicJwk);
     return {
-      keys: [key.publicJwk],
+      keys: [active.publicJwk, ...retired],
     };
   }
 

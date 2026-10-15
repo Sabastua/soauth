@@ -96,6 +96,17 @@ export class SessionAndTokenRepository {
         .execute();
     });
   }
+
+  /**
+   * RFC 7009 Explicit Refresh Token Revocation.
+   */
+  public async revokeRefreshTokenById(tokenId: string): Promise<void> {
+    await db
+      .updateTable('refresh_tokens')
+      .set({ is_revoked: true })
+      .where('id', '=', tokenId)
+      .execute();
+  }
 }
 
 export const sessionAndTokenRepository = new SessionAndTokenRepository();
