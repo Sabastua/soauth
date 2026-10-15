@@ -1,0 +1,38 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: soauth-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: soauth_user
+      POSTGRES_PASSWORD: soauth_pass
+      POSTGRES_DB: soauth_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - soauth_pgdata:/var/lib/postgresql/data
+      - ./backend/src/database/migrations/001_init_oauth_schema.sql:/docker-entrypoint-initdb.d/001_init_oauth_schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U soauth_user -d soauth_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: soauth-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - soauth_redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  soauth_pgdata:
+  soauth_redisdata:
