@@ -150,6 +150,7 @@ export type OAuthErrorCode =
   | 'unauthorized_client'
   | 'unsupported_grant_type'
   | 'invalid_scope'
+  | 'invalid_redirect_uri'
   | 'access_denied'
   | 'server_error';
 

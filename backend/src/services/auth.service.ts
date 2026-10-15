@@ -8,6 +8,7 @@ import {
 import { clientRepository } from '../repositories/client.repo.js';
 import { userRepository } from '../repositories/user.repo.js';
 import { sessionAndTokenRepository } from '../repositories/session.repo.js';
+import { verifyTotpCode } from '../core/totp.js';
 import {
   OAuthProtocolError,
   type AuthorizeRequestQuery,
@@ -100,11 +101,13 @@ export class AuthorizationService {
   /**
    * Authenticates end-user credentials with Argon2id and creates a bound session row.
    * Mitigates user enumeration timing attacks by always executing Argon2id verification.
+   * Enforces RFC 6238 TOTP verification if MFA is enabled on the user account.
    */
   public async authenticateUser(params: {
     email: string;
     passwordPlain: string;
     clientId: string;
+    totpCode?: string;
     ipAddress: string | null;
     userAgent: string | null;
   }) {
@@ -114,6 +117,15 @@ export class AuthorizationService {
     const isPasswordValid = await verifySecretArgon2id(targetHash, params.passwordPlain);
     if (!user || !isPasswordValid) {
       throw new OAuthProtocolError('access_denied', 'Invalid email or password.', 401);
+    }
+
+    if (user.is_mfa_enabled) {
+      if (!params.totpCode) {
+        throw new OAuthProtocolError('access_denied', 'MFA_REQUIRED', 401);
+      }
+      if (!user.mfa_secret_encrypted || !verifyTotpCode(user.mfa_secret_encrypted, params.totpCode)) {
+        throw new OAuthProtocolError('access_denied', 'Invalid 6-digit MFA code.', 401);
+      }
     }
 
     const rawSessionToken = generateOpaqueToken(32);

@@ -64,11 +64,12 @@ export const App: React.FC = () => {
       <LoginView
         context={flowState.context}
         {...(flowState.error !== undefined ? { error: flowState.error } : {})}
-        onCredentialsCaptured={(email, password) => {
+        {...(flowState.requireMfa !== undefined ? { requireMfa: flowState.requireMfa } : {})}
+        onCredentialsCaptured={(email, password, mfaCode) => {
           setFlowState({
             step: 'CONSENT',
             context: flowState.context,
-            credentials: { email, password },
+            credentials: { email, password, ...(mfaCode ? { mfaCode } : {}) },
           });
         }}
       />
@@ -87,15 +88,20 @@ export const App: React.FC = () => {
               email: flowState.credentials.email,
               password: flowState.credentials.password,
               consentGranted,
+              ...(flowState.credentials.mfaCode
+                ? { mfaCode: flowState.credentials.mfaCode }
+                : {}),
             });
             setFlowState({ step: 'REDIRECTING', redirectTo: redirect_to });
             window.location.assign(redirect_to);
           } catch (err) {
             const message = err instanceof Error ? err.message : 'Authentication failed';
+            const isMfaNeeded = message.includes('MFA_REQUIRED');
             setFlowState({
               step: 'LOGIN',
               context: flowState.context,
-              error: message,
+              requireMfa: isMfaNeeded,
+              error: isMfaNeeded ? 'Please enter your 6-digit MFA authenticator code.' : message,
             });
           }
         }}

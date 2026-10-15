@@ -7,6 +7,7 @@ export async function submitLoginAndConsent(params: {
   email: string;
   password: string;
   consentGranted: boolean;
+  mfaCode?: string;
 }): Promise<{ redirect_to: string }> {
   const response = await fetch(`${BACKEND_URL}/api/v1/oauth/login-consent`, {
     method: 'POST',
@@ -18,6 +19,7 @@ export async function submitLoginAndConsent(params: {
       email: params.email,
       password: params.password,
       consent_granted: params.consentGranted,
+      ...(params.mfaCode ? { mfa_code: params.mfaCode } : {}),
       response_type: 'code',
       client_id: params.context.clientId,
       redirect_uri: params.context.redirectUri,

@@ -1,12 +1,19 @@
 import { randomUUID } from 'node:crypto';
 import {
   exportJWK,
+  exportPKCS8,
+  exportSPKI,
   generateKeyPair,
+  importPKCS8,
+  importSPKI,
   jwtVerify,
   SignJWT,
   type JWK,
   type KeyLike,
 } from 'jose';
+import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { computeOidcAtHash } from './crypto.js';
 import type { AccessTokenPayload, IdTokenPayload } from '../types/oauth.types.js';
 
@@ -22,6 +29,7 @@ interface ActiveSigningKeyMaterial {
 
 /**
  * Manages asymmetric signing keys (RS256 / ES256), JWT issuance, and RFC 7517 JWKS exposure.
+ * Supports persistent loading/saving from disk or environment variables.
  */
 export class TokenCryptoManager {
   private activeKey: ActiveSigningKeyMaterial | null = null;
@@ -29,24 +37,89 @@ export class TokenCryptoManager {
   private readonly issuer: string;
   private readonly alg: SupportedSigningAlg;
   private kid: string;
+  private readonly keysDir?: string | undefined;
 
   constructor(
     issuer = process.env.OIDC_ISSUER ?? 'https://auth.soauth.internal',
     alg: SupportedSigningAlg = (process.env.SIGNING_ALG as SupportedSigningAlg) ?? 'RS256',
     kid = process.env.KEY_ID ?? 'soauth-key-2026-10',
+    keysDir = process.env.KEYS_DIR,
   ) {
     this.issuer = issuer;
     this.alg = alg;
     this.kid = kid;
+    this.keysDir = keysDir;
   }
 
   /**
-   * Initializes or loads the asymmetric key pair in memory.
-   * In production, inject PEM/JWK from KMS/HSM or Vault; falls back to generating an ephemeral keypair.
+   * Initializes or loads the asymmetric key pair.
+   * Order of precedence:
+   * 1. PRIVATE_KEY_PEM environment variable
+   * 2. Persistent file in keysDir (e.g. keys/private.pem)
+   * 3. Ephemeral keypair generation (persisted to keysDir if configured)
    */
   public async initializeKeys(): Promise<void> {
     if (this.activeKey) return;
+
+    // 1. Check environment variable PEM
+    if (process.env.PRIVATE_KEY_PEM && process.env.PUBLIC_KEY_PEM) {
+      try {
+        const privateKey = await importPKCS8(process.env.PRIVATE_KEY_PEM, this.alg);
+        const publicKey = await importSPKI(process.env.PUBLIC_KEY_PEM, this.alg);
+        const exportedPublicJwk = await exportJWK(publicKey);
+        this.activeKey = {
+          kid: this.kid,
+          alg: this.alg,
+          privateKey,
+          publicKey,
+          publicJwk: { ...exportedPublicJwk, kid: this.kid, alg: this.alg, use: 'sig' },
+        };
+        return;
+      } catch (err) {
+        console.warn('[tokens] Failed to import keys from environment PEM; falling back to file/generation.', err);
+      }
+    }
+
+    // 2. Check disk persistence directory
+    if (this.keysDir) {
+      const privPath = join(this.keysDir, 'private.pem');
+      const pubPath = join(this.keysDir, 'public.pem');
+
+      if (existsSync(privPath) && existsSync(pubPath)) {
+        try {
+          const privPem = await readFile(privPath, 'utf8');
+          const pubPem = await readFile(pubPath, 'utf8');
+          const privateKey = await importPKCS8(privPem, this.alg);
+          const publicKey = await importSPKI(pubPem, this.alg);
+          const exportedPublicJwk = await exportJWK(publicKey);
+          this.activeKey = {
+            kid: this.kid,
+            alg: this.alg,
+            privateKey,
+            publicKey,
+            publicJwk: { ...exportedPublicJwk, kid: this.kid, alg: this.alg, use: 'sig' },
+          };
+          return;
+        } catch (err) {
+          console.warn('[tokens] Failed to load keys from disk; re-generating keypair.', err);
+        }
+      }
+    }
+
+    // 3. Generate keypair and save to keysDir if configured
     this.activeKey = await this.generateKeyMaterial(this.kid);
+
+    if (this.keysDir) {
+      try {
+        await mkdir(this.keysDir, { recursive: true });
+        const privPem = await exportPKCS8(this.activeKey.privateKey);
+        const pubPem = await exportSPKI(this.activeKey.publicKey);
+        await writeFile(join(this.keysDir, 'private.pem'), privPem, 'utf8');
+        await writeFile(join(this.keysDir, 'public.pem'), pubPem, 'utf8');
+      } catch (err) {
+        console.warn('[tokens] Failed to persist generated keypair to disk:', err);
+      }
+    }
   }
 
   /**

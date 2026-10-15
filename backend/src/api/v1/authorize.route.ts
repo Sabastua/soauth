@@ -114,6 +114,7 @@ export async function registerAuthorizeRoutes(app: FastifyInstance): Promise<voi
       email: string;
       password: string;
       consent_granted: boolean;
+      mfa_code?: string;
     };
   }>(
     '/api/v1/oauth/login-consent',
@@ -138,6 +139,7 @@ export async function registerAuthorizeRoutes(app: FastifyInstance): Promise<voi
             email: { type: 'string', format: 'email' },
             password: { type: 'string', minLength: 8, maxLength: 256 },
             consent_granted: { type: 'boolean' },
+            mfa_code: { type: 'string', minLength: 6, maxLength: 6 },
             response_type: { type: 'string', enum: ['code'] },
             client_id: { type: 'string', format: 'uuid' },
             redirect_uri: { type: 'string' },
@@ -167,6 +169,7 @@ export async function registerAuthorizeRoutes(app: FastifyInstance): Promise<voi
         email: request.body.email,
         passwordPlain: request.body.password,
         clientId: client.id,
+        ...(request.body.mfa_code !== undefined ? { totpCode: request.body.mfa_code } : {}),
         ipAddress: request.ip ?? null,
         userAgent: request.headers['user-agent'] ?? null,
       });

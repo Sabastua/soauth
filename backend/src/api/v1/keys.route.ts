@@ -25,6 +25,8 @@ export async function registerDiscoveryAndJwksRoutes(app: FastifyInstance): Prom
       userinfo_endpoint: `${issuer}/userinfo`,
       revocation_endpoint: `${issuer}/revoke`,
       introspection_endpoint: `${issuer}/introspect`,
+      end_session_endpoint: `${issuer}/logout`,
+      registration_endpoint: `${issuer}/register`,
       jwks_uri: `${issuer}/.well-known/jwks.json`,
       response_types_supported: ['code'],
       subject_types_supported: ['public'],

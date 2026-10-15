@@ -10,11 +10,16 @@ export interface OAuthTransactionContext {
 }
 
 export type AuthFlowStep =
-  | { step: 'LOGIN'; context: OAuthTransactionContext; error?: string }
+  | {
+      step: 'LOGIN';
+      context: OAuthTransactionContext;
+      error?: string;
+      requireMfa?: boolean;
+    }
   | {
       step: 'CONSENT';
       context: OAuthTransactionContext;
-      credentials: { email: string; password: string };
+      credentials: { email: string; password: string; mfaCode?: string };
       error?: string;
     }
   | { step: 'REDIRECTING'; redirectTo: string };
