@@ -8,6 +8,7 @@ interface LoginViewProps {
   onCredentialsCaptured: (email: string, password: string, mfaCode?: string) => void;
   onNavigateToSignUp?: () => void;
   onNavigateToForgotPassword?: () => void;
+  onNavigateToPortal?: () => void;
 }
 
 export const LoginView: React.FC<LoginViewProps> = ({
@@ -17,6 +18,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
   onCredentialsCaptured,
   onNavigateToSignUp,
   onNavigateToForgotPassword,
+  onNavigateToPortal,
 }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -109,6 +111,21 @@ export const LoginView: React.FC<LoginViewProps> = ({
               style={{ color: 'var(--primary)', fontWeight: 500, textDecoration: 'none' }}
             >
               Sign up
+            </a>
+          </p>
+        )}
+
+        {onNavigateToPortal && (
+          <p style={{ fontSize: '0.8rem', textAlign: 'center', marginTop: '0.75rem', borderTop: '1px solid #f1f5f9', paddingTop: '0.75rem' }}>
+            <a
+              href="#portal"
+              onClick={(e) => {
+                e.preventDefault();
+                onNavigateToPortal();
+              }}
+              style={{ color: '#64748b', textDecoration: 'none' }}
+            >
+              🛠️ Developer Portal (Manage OAuth Apps)
             </a>
           </p>
         )}

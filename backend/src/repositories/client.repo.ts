@@ -42,6 +42,35 @@ export class ClientRepository {
     const allowedSet = new Set(client.allowed_scopes);
     return requestedScopes.every((scope) => allowedSet.has(scope));
   }
+
+  /**
+   * Lists all registered OAuth clients for the developer portal.
+   */
+  public async listAll(): Promise<RegisteredClientRow[]> {
+    return db
+      .selectFrom('registered_clients')
+      .selectAll()
+      .orderBy('created_at', 'desc')
+      .execute();
+  }
+
+  public async deleteById(clientId: string): Promise<void> {
+    await db
+      .deleteFrom('registered_clients')
+      .where('id', '=', clientId)
+      .execute();
+  }
+
+  public async updateClientSecret(clientId: string, newSecretHash: string): Promise<void> {
+    await db
+      .updateTable('registered_clients')
+      .set({
+        client_secret_hash: newSecretHash,
+        updated_at: new Date(),
+      })
+      .where('id', '=', clientId)
+      .execute();
+  }
 }
 
 export const clientRepository = new ClientRepository();

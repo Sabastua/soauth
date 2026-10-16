@@ -96,4 +96,59 @@ export async function registerClientRegistrationRoutes(app: FastifyInstance): Pr
       });
     },
   );
+
+  /**
+   * GET /api/v1/clients
+   * Lists all registered OAuth clients for the developer portal.
+   */
+  app.get('/api/v1/clients', async (_request, reply) => {
+    const clients = await clientRepository.listAll();
+    const sanitized = clients.map((c) => ({
+      id: c.id,
+      app_name: c.app_name,
+      redirect_uris: c.redirect_uris,
+      allowed_scopes: c.allowed_scopes,
+      is_confidential: c.is_confidential,
+      require_pkce: c.require_pkce,
+      created_at: c.created_at,
+    }));
+    reply.header('Cache-Control', 'no-store');
+    return reply.status(200).send(sanitized);
+  });
+
+  /**
+   * DELETE /api/v1/clients/:id
+   */
+  app.delete<{ Params: { id: string } }>('/api/v1/clients/:id', async (request, reply) => {
+    const { id } = request.params;
+    await clientRepository.deleteById(id);
+    reply.header('Cache-Control', 'no-store');
+    return reply.status(200).send({ message: 'Client deleted successfully.' });
+  });
+
+  /**
+   * POST /api/v1/clients/:id/regenerate-secret
+   */
+  app.post<{ Params: { id: string } }>(
+    '/api/v1/clients/:id/regenerate-secret',
+    async (request, reply) => {
+      const { id } = request.params;
+      const client = await clientRepository.findById(id);
+      if (!client) {
+        throw new OAuthProtocolError('invalid_client', 'Client not found.', 404);
+      }
+
+      const newRawSecret = generateOpaqueToken(32);
+      const newSecretHash = await hashSecretArgon2id(newRawSecret);
+
+      await clientRepository.updateClientSecret(id, newSecretHash);
+
+      reply.header('Cache-Control', 'no-store');
+      return reply.status(200).send({
+        client_id: id,
+        client_secret: newRawSecret,
+        message: 'New client secret generated. Store it safely as it will not be displayed again.',
+      });
+    },
+  );
 }

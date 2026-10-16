@@ -147,6 +147,18 @@ export async function initializeDevMemoryStore(): Promise<void> {
     return row;
   };
 
+  clientRepository.listAll = async () => Array.from(clientsStore.values());
+  clientRepository.deleteById = async (id: string) => {
+    clientsStore.delete(id);
+  };
+  clientRepository.updateClientSecret = async (id: string, newSecretHash: string) => {
+    const client = clientsStore.get(id);
+    if (client) {
+      client.client_secret_hash = newSecretHash;
+      client.updated_at = new Date();
+    }
+  };
+
   sessionAndTokenRepository.createSession = async (session) => {
     const id = randomUUID();
     const row: ActiveSessionRow = {

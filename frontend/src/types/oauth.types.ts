@@ -32,4 +32,5 @@ export type AuthFlowStep =
       credentials: { email: string; password: string; mfaCode?: string };
       error?: string;
     }
+  | { step: 'DEV_PORTAL'; context?: OAuthTransactionContext }
   | { step: 'REDIRECTING'; redirectTo: string };

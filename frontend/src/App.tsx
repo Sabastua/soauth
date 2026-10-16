@@ -1,8 +1,9 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { LoginView } from './views/Login.js';
 import { ConsentView } from './views/Consent.js';
 import { SignUpView } from './views/SignUp.js';
 import { ForgotPasswordView } from './views/ForgotPassword.js';
+import { DevPortal } from './views/DevPortal.js';
 import {
   submitForgotPassword,
   submitLoginAndConsent,
@@ -50,18 +51,36 @@ export const App: React.FC = () => {
     [],
   );
 
-  const [flowState, setFlowState] = useState<AuthFlowStep | null>(() =>
-    initialContext ? { step: 'LOGIN', context: initialContext } : null,
-  );
+  const [flowState, setFlowState] = useState<AuthFlowStep>(() => {
+    if (window.location.hash === '#portal' || !initialContext) {
+      return { step: 'DEV_PORTAL', ...(initialContext ? { context: initialContext } : {}) };
+    }
+    return { step: 'LOGIN', context: initialContext };
+  });
 
-  if (!flowState) {
+  useEffect(() => {
+    const handleHash = () => {
+      if (window.location.hash === '#portal') {
+        setFlowState({ step: 'DEV_PORTAL', ...(initialContext ? { context: initialContext } : {}) });
+      }
+    };
+    window.addEventListener('hashchange', handleHash);
+    return () => window.removeEventListener('hashchange', handleHash);
+  }, [initialContext]);
+
+  if (flowState.step === 'DEV_PORTAL') {
     return (
-      <main className="oauth-card">
-        <h1>Invalid OAuth 2.0 Authorization Request</h1>
-        <p>
-          Missing required PKCE (<code>S256</code>) or client parameters. Initiate login via{' '}
-          <code>GET /authorize</code>.
-        </p>
+      <main style={{ width: '100%', maxWidth: '900px', padding: '1rem' }}>
+        <DevPortal
+          onBackToLogin={
+            initialContext
+              ? () => {
+                  window.location.hash = '';
+                  setFlowState({ step: 'LOGIN', context: initialContext });
+                }
+              : undefined
+          }
+        />
       </main>
     );
   }
@@ -84,6 +103,10 @@ export const App: React.FC = () => {
         }}
         onNavigateToForgotPassword={() => {
           setFlowState({ step: 'FORGOT_PASSWORD', context: flowState.context });
+        }}
+        onNavigateToPortal={() => {
+          window.location.hash = '#portal';
+          setFlowState({ step: 'DEV_PORTAL', context: flowState.context });
         }}
       />
     );
