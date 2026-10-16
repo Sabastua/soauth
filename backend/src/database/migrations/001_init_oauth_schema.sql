@@ -73,3 +73,15 @@ CREATE TABLE IF NOT EXISTS refresh_tokens (
 CREATE INDEX IF NOT EXISTS idx_refresh_tokens_hashed ON refresh_tokens (token_hashed);
 CREATE INDEX IF NOT EXISTS idx_refresh_tokens_session_id ON refresh_tokens (session_id);
 CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user_client ON refresh_tokens (user_id, client_id);
+
+-- 5. password_reset_tokens: One-time hashed tokens for self-service password reset
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token_hashed VARCHAR(128) NOT NULL UNIQUE, -- SHA-256 hex digest of the raw opaque reset token
+    expires_at TIMESTAMPTZ NOT NULL,
+    is_used BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_hash ON password_reset_tokens (token_hashed);

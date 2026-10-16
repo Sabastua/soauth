@@ -1,5 +1,10 @@
 import { db } from '../database/connection.js';
-import type { NewUserRow, UserRow } from '../database/schema.js';
+import type {
+  NewPasswordResetTokenRow,
+  NewUserRow,
+  PasswordResetTokenRow,
+  UserRow,
+} from '../database/schema.js';
 
 export class UserRepository {
   public async findById(userId: string): Promise<UserRow | undefined> {
@@ -29,6 +34,66 @@ export class UserRepository {
       })
       .returningAll()
       .executeTakeFirstOrThrow();
+  }
+
+  public async updatePassword(userId: string, newPasswordHash: string): Promise<void> {
+    await db
+      .updateTable('users')
+      .set({
+        password_hash: newPasswordHash,
+        updated_at: new Date(),
+      })
+      .where('id', '=', userId)
+      .execute();
+  }
+
+  public async createPasswordResetToken(
+    tokenData: NewPasswordResetTokenRow,
+  ): Promise<PasswordResetTokenRow> {
+    return db
+      .insertInto('password_reset_tokens')
+      .values(tokenData)
+      .returningAll()
+      .executeTakeFirstOrThrow();
+  }
+
+  public async findValidPasswordResetToken(
+    tokenHash: string,
+  ): Promise<PasswordResetTokenRow | undefined> {
+    return db
+      .selectFrom('password_reset_tokens')
+      .selectAll()
+      .where('token_hashed', '=', tokenHash)
+      .where('is_used', '=', false)
+      .where('expires_at', '>', new Date())
+      .executeTakeFirst();
+  }
+
+  public async markPasswordResetTokenUsed(tokenId: string): Promise<void> {
+    await db
+      .updateTable('password_reset_tokens')
+      .set({ is_used: true })
+      .where('id', '=', tokenId)
+      .execute();
+  }
+
+  public async revokeAllSessionsForUser(userId: string, reason: string): Promise<void> {
+    await db.transaction().execute(async (trx) => {
+      await trx
+        .updateTable('active_sessions')
+        .set({
+          is_revoked: true,
+          revoked_reason: reason,
+        })
+        .where('user_id', '=', userId)
+        .execute();
+
+      await trx
+        .updateTable('refresh_tokens')
+        .set({ is_revoked: true })
+        .where('user_id', '=', userId)
+        .execute();
+    });
   }
 }
 

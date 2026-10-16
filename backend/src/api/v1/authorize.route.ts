@@ -60,7 +60,7 @@ export async function registerAuthorizeRoutes(app: FastifyInstance): Promise<voi
         typeof authenticatedSessionId !== 'string'
       ) {
         const frontendLoginUrl = new URL(
-          process.env.FRONTEND_LOGIN_URL ?? 'https://login.soauth.internal/login',
+          process.env.FRONTEND_LOGIN_URL ?? 'http://localhost:3000',
         );
         frontendLoginUrl.searchParams.set('client_id', client.id);
         frontendLoginUrl.searchParams.set('app_name', client.app_name);

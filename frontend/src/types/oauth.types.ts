@@ -17,6 +17,16 @@ export type AuthFlowStep =
       requireMfa?: boolean;
     }
   | {
+      step: 'SIGNUP';
+      context: OAuthTransactionContext;
+      error?: string;
+    }
+  | {
+      step: 'FORGOT_PASSWORD';
+      context: OAuthTransactionContext;
+      error?: string;
+    }
+  | {
       step: 'CONSENT';
       context: OAuthTransactionContext;
       credentials: { email: string; password: string; mfaCode?: string };

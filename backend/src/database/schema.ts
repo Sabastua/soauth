@@ -50,11 +50,21 @@ export interface RefreshTokensTable {
   created_at: ColumnType<Date, string | undefined, never>;
 }
 
+export interface PasswordResetTokensTable {
+  id: Generated<string>;
+  user_id: string;
+  token_hashed: string;
+  expires_at: ColumnType<Date, Date | string, Date | string>;
+  is_used: Generated<boolean>;
+  created_at: ColumnType<Date, string | undefined, never>;
+}
+
 export interface Database {
   users: UsersTable;
   registered_clients: RegisteredClientsTable;
   active_sessions: ActiveSessionsTable;
   refresh_tokens: RefreshTokensTable;
+  password_reset_tokens: PasswordResetTokensTable;
 }
 
 export type UserRow = Selectable<UsersTable>;
@@ -69,3 +79,6 @@ export type NewActiveSessionRow = Insertable<ActiveSessionsTable>;
 export type RefreshTokenRow = Selectable<RefreshTokensTable>;
 export type NewRefreshTokenRow = Insertable<RefreshTokensTable>;
 export type RefreshTokenUpdate = Updateable<RefreshTokensTable>;
+
+export type PasswordResetTokenRow = Selectable<PasswordResetTokensTable>;
+export type NewPasswordResetTokenRow = Insertable<PasswordResetTokensTable>;

@@ -6,6 +6,8 @@ interface LoginViewProps {
   error?: string;
   requireMfa?: boolean;
   onCredentialsCaptured: (email: string, password: string, mfaCode?: string) => void;
+  onNavigateToSignUp?: () => void;
+  onNavigateToForgotPassword?: () => void;
 }
 
 export const LoginView: React.FC<LoginViewProps> = ({
@@ -13,6 +15,8 @@ export const LoginView: React.FC<LoginViewProps> = ({
   error,
   requireMfa = false,
   onCredentialsCaptured,
+  onNavigateToSignUp,
+  onNavigateToForgotPassword,
 }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -47,7 +51,21 @@ export const LoginView: React.FC<LoginViewProps> = ({
           onChange={(e) => setEmail(e.target.value)}
         />
 
-        <label htmlFor="password">Password</label>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <label htmlFor="password" style={{ margin: 0 }}>Password</label>
+          {onNavigateToForgotPassword && (
+            <a
+              href="#forgot"
+              onClick={(e) => {
+                e.preventDefault();
+                onNavigateToForgotPassword();
+              }}
+              style={{ fontSize: '0.8rem', color: 'var(--primary)', textDecoration: 'none' }}
+            >
+              Forgot password?
+            </a>
+          )}
+        </div>
         <input
           id="password"
           type="password"
@@ -78,6 +96,22 @@ export const LoginView: React.FC<LoginViewProps> = ({
         <button type="submit">
           {requireMfa ? 'Verify & Continue' : 'Continue to Scope Consent'}
         </button>
+
+        {onNavigateToSignUp && (
+          <p style={{ fontSize: '0.875rem', textAlign: 'center', marginTop: '0.5rem' }}>
+            Don't have an account?{' '}
+            <a
+              href="#signup"
+              onClick={(e) => {
+                e.preventDefault();
+                onNavigateToSignUp();
+              }}
+              style={{ color: 'var(--primary)', fontWeight: 500, textDecoration: 'none' }}
+            >
+              Sign up
+            </a>
+          </p>
+        )}
       </form>
     </main>
   );

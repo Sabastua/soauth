@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'node:url';
+import { resolve } from 'node:path';
 import Fastify, { type FastifyError } from 'fastify';
 import cors from '@fastify/cors';
 import formbody from '@fastify/formbody';
@@ -9,9 +11,16 @@ import { registerDiscoveryAndJwksRoutes } from './api/v1/keys.route.js';
 import { registerUserInfoRoutes } from './api/v1/userinfo.route.js';
 import { registerLogoutRoutes } from './api/v1/logout.route.js';
 import { registerClientRegistrationRoutes } from './api/v1/register.route.js';
+import { registerAccountRoutes } from './api/v1/account.route.js';
+import { initializeDevMemoryStore } from './database/dev-store.js';
 import { OAuthProtocolError } from './types/oauth.types.js';
 
 export async function buildOAuthServer() {
+  // If running in development without live Postgres/Redis, enable in-memory dev store
+  if (process.env.NODE_ENV !== 'test' && process.env.USE_DEV_MEMORY !== 'false') {
+    await initializeDevMemoryStore();
+  }
+
   const app = Fastify({
     logger: true,
     trustProxy: true,
@@ -21,7 +30,7 @@ export async function buildOAuthServer() {
   await app.register(formbody);
   await app.register(cookie);
   await app.register(cors, {
-    origin: process.env.FRONTEND_LOGIN_URL ?? 'https://login.soauth.internal',
+    origin: process.env.FRONTEND_LOGIN_URL ?? 'http://localhost:3000',
     credentials: true,
   });
 
@@ -59,6 +68,43 @@ export async function buildOAuthServer() {
   await app.register(registerUserInfoRoutes);
   await app.register(registerLogoutRoutes);
   await app.register(registerClientRegistrationRoutes);
+  await app.register(registerAccountRoutes);
+
+  // Demo /callback inspector for interactive manual browser testing
+  app.get('/callback', async (request, reply) => {
+    const query = request.query as Record<string, string>;
+    const code = query['code'] ?? 'None';
+    const state = query['state'] ?? 'None';
+    const error = query['error'];
+
+    reply.type('text/html');
+    return `<!DOCTYPE html>
+<html>
+<head>
+  <title>soauth - Authorization Callback</title>
+  <style>
+    body { font-family: sans-serif; background: #f8fafc; padding: 2rem; display: flex; justify-content: center; }
+    .card { background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 2rem; max-width: 600px; width: 100%; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); }
+    h1 { color: #0f172a; font-size: 1.3rem; margin-bottom: 1rem; }
+    .field { margin: 1rem 0; word-break: break-all; }
+    label { font-weight: bold; font-size: 0.85rem; color: #64748b; display: block; margin-bottom: 0.25rem; }
+    code { background: #f1f5f9; padding: 0.35rem 0.5rem; border-radius: 4px; display: block; font-size: 0.9rem; border: 1px solid #cbd5e1; }
+    .success { color: #16a34a; font-weight: bold; }
+    .error { color: #dc2626; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>${error ? '<span class="error">Authorization Denied</span>' : '<span class="success">Authorization Grant Successful</span>'}</h1>
+    ${error ? `<p class="field"><label>Error:</label><code>${error}</code></p>` : `
+      <div class="field"><label>Authorization Code (Single-Use, 300s TTL):</label><code>${code}</code></div>
+      <div class="field"><label>State Parameter:</label><code>${state}</code></div>
+      <p style="color: #64748b; font-size: 0.85rem; margin-top: 1rem;">You can now exchange this code at <code>POST /token</code> using your PKCE <code>code_verifier</code>!</p>
+    `}
+  </div>
+</body>
+</html>`;
+  });
 
   return app;
 }
@@ -71,7 +117,14 @@ async function start() {
   await app.listen({ port, host });
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+const isMainModule =
+  Boolean(process.env.START_SERVER) ||
+  (process.argv[1] !== undefined &&
+    (resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url)) ||
+      process.argv[1].endsWith('main.ts') ||
+      process.argv[1].endsWith('main.js')));
+
+if (isMainModule) {
   start().catch((err) => {
     console.error('Fatal error starting soauth server:', err);
     process.exit(1);

@@ -1,7 +1,14 @@
 import React, { useMemo, useState } from 'react';
 import { LoginView } from './views/Login.js';
 import { ConsentView } from './views/Consent.js';
-import { submitLoginAndConsent } from './services/api.js';
+import { SignUpView } from './views/SignUp.js';
+import { ForgotPasswordView } from './views/ForgotPassword.js';
+import {
+  submitForgotPassword,
+  submitLoginAndConsent,
+  submitResetPassword,
+  submitSignUp,
+} from './services/api.js';
 import type { AuthFlowStep, OAuthTransactionContext } from './types/oauth.types.js';
 
 function parseOAuthQueryContext(search: string): OAuthTransactionContext | null {
@@ -71,6 +78,50 @@ export const App: React.FC = () => {
             context: flowState.context,
             credentials: { email, password, ...(mfaCode ? { mfaCode } : {}) },
           });
+        }}
+        onNavigateToSignUp={() => {
+          setFlowState({ step: 'SIGNUP', context: flowState.context });
+        }}
+        onNavigateToForgotPassword={() => {
+          setFlowState({ step: 'FORGOT_PASSWORD', context: flowState.context });
+        }}
+      />
+    );
+  }
+
+  if (flowState.step === 'SIGNUP') {
+    return (
+      <SignUpView
+        context={flowState.context}
+        onSignUp={async (email, password) => {
+          await submitSignUp(email, password);
+          // Transition directly to consent with newly created account
+          setFlowState({
+            step: 'CONSENT',
+            context: flowState.context,
+            credentials: { email, password },
+          });
+        }}
+        onNavigateToLogin={() => {
+          setFlowState({ step: 'LOGIN', context: flowState.context });
+        }}
+      />
+    );
+  }
+
+  if (flowState.step === 'FORGOT_PASSWORD') {
+    return (
+      <ForgotPasswordView
+        context={flowState.context}
+        onRequestReset={async (email) => {
+          const res = await submitForgotPassword(email);
+          return res.dev_reset_token;
+        }}
+        onResetPassword={async (token, newPassword) => {
+          await submitResetPassword(token, newPassword);
+        }}
+        onNavigateToLogin={() => {
+          setFlowState({ step: 'LOGIN', context: flowState.context });
         }}
       />
     );

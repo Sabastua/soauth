@@ -32,6 +32,7 @@ describe('OAuth 2.0 & OIDC Authorization Code + PKCE Flow & Replay Revocation', 
   let testUser: UserRow;
 
   before(async () => {
+    process.env.NODE_ENV = 'test';
     const [clientSecretHash, userPasswordHash] = await Promise.all([
       hashSecretArgon2id(testClientSecret),
       hashSecretArgon2id('CorrectHorseBatteryStaple!99'),
