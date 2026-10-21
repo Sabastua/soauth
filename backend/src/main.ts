@@ -12,6 +12,7 @@ import { registerUserInfoRoutes } from './api/v1/userinfo.route.js';
 import { registerLogoutRoutes } from './api/v1/logout.route.js';
 import { registerClientRegistrationRoutes } from './api/v1/register.route.js';
 import { registerAccountRoutes } from './api/v1/account.route.js';
+import { registerSocialAuthRoutes } from './api/v1/social.route.js';
 import { initializeDevMemoryStore } from './database/dev-store.js';
 import { OAuthProtocolError } from './types/oauth.types.js';
 
@@ -69,6 +70,7 @@ export async function buildOAuthServer() {
   await app.register(registerLogoutRoutes);
   await app.register(registerClientRegistrationRoutes);
   await app.register(registerAccountRoutes);
+  await app.register(registerSocialAuthRoutes);
 
   // Demo /callback inspector for interactive manual browser testing
   app.get('/callback', async (request, reply) => {
