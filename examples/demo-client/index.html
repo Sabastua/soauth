@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>soauth Demo Client App</title>
+  <style>
+    :root {
+      --primary: #0284c7;
+      --primary-hover: #0369a1;
+      --bg: #f8fafc;
+      --card-bg: #ffffff;
+      --text: #0f172a;
+      --muted: #64748b;
+      --border: #e2e8f0;
+      --radius: 8px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); padding: 2rem 1rem; }
+    .container { max-width: 800px; margin: 0 auto; }
+    header { margin-bottom: 2rem; }
+    h1 { font-size: 1.75rem; margin-bottom: 0.5rem; }
+    p { color: var(--muted); font-size: 0.95rem; }
+    .card { background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.5rem; margin-bottom: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+    .card h2 { font-size: 1.15rem; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem; }
+    label { font-size: 0.85rem; font-weight: 500; color: #334155; display: block; margin-bottom: 0.25rem; }
+    input { width: 100%; padding: 0.6rem 0.8rem; border: 1px solid var(--border); border-radius: 6px; font-size: 0.9rem; }
+    button { background: var(--primary); color: white; border: none; padding: 0.7rem 1.2rem; border-radius: 6px; font-weight: 500; cursor: pointer; transition: background 0.15s; font-size: 0.9rem; }
+    button:hover { background: var(--primary-hover); }
+    button.secondary { background: #f1f5f9; color: #334155; border: 1px solid #cbd5e1; }
+    button.secondary:hover { background: #e2e8f0; }
+    button.danger { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
+    button.danger:hover { background: #fecaca; }
+    pre { background: #0f172a; color: #f8fafc; padding: 1rem; border-radius: 6px; font-size: 0.85rem; overflow-x: auto; margin-top: 0.75rem; max-height: 250px; }
+    .btn-group { display: flex; gap: 0.75rem; flex-wrap: wrap; margin-top: 1rem; }
+    .status-badge { display: inline-block; padding: 0.25rem 0.6rem; border-radius: 9999px; font-size: 0.8rem; font-weight: 600; }
+    .status-authenticated { background: #dcfce7; color: #166534; }
+    .status-unauthenticated { background: #f1f5f9; color: #475569; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>soauth Demo Client Application</h1>
+      <p>Demonstrates RFC 6749 Authorization Code Flow with PKCE (S256), Token Exchange, and OIDC /userinfo.</p>
+    </header>
+
+    <div class="card">
+      <h2>⚙️ Configuration</h2>
+      <div class="grid">
+        <div>
+          <label>Authorization Server (Issuer URL)</label>
+          <input id="cfgIssuer" type="url" value="http://localhost:4000" />
+        </div>
+        <div>
+          <label>Client ID</label>
+          <input id="cfgClientId" type="text" value="00000000-0000-4000-8000-000000000001" />
+        </div>
+        <div>
+          <label>Client Secret (Optional for Public SPA)</label>
+          <input id="cfgClientSecret" type="text" value="soauth-dev-confidential-secret-2026" />
+        </div>
+        <div>
+          <label>Redirect URI</label>
+          <input id="cfgRedirectUri" type="url" value="http://localhost:4000/callback" />
+        </div>
+      </div>
+      <div>
+        <label>Requested Scopes</label>
+        <input id="cfgScopes" type="text" value="openid profile email offline_access" />
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>
+        🔐 Authentication Status: 
+        <span id="authStatus" class="status-badge status-unauthenticated">Not Authenticated</span>
+      </h2>
+      <p id="statusDesc">Click the button below to initiate login with soauth.</p>
+      
+      <div class="btn-group">
+        <button id="btnLogin" onclick="initiateLogin()">🚀 Log In with soauth (PKCE)</button>
+        <button id="btnFetchUser" class="secondary" style="display:none;" onclick="handleFetchUser()">👤 Fetch User Info</button>
+        <button id="btnRefresh" class="secondary" style="display:none;" onclick="handleRefreshToken()">🔄 Refresh Tokens</button>
+        <button id="btnLogout" class="danger" style="display:none;" onclick="handleLogout()">🚪 Logout</button>
+      </div>
+
+      <div id="outputContainer" style="display:none; margin-top: 1rem;">
+        <label>Response Payload:</label>
+        <pre id="outputCode"></pre>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Browser PKCE generator
+    async function generatePKCE() {
+      const charset = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
+      const array = new Uint8Array(64);
+      window.crypto.getRandomValues(array);
+      let verifier = '';
+      for (let i = 0; i < 64; i++) verifier += charset[array[i] % charset.length];
+
+      const encoder = new TextEncoder();
+      const digest = await window.crypto.subtle.digest('SHA-256', encoder.encode(verifier));
+      const bytes = new Uint8Array(digest);
+      let binary = '';
+      for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+      const challenge = btoa(binary).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');
+      return { verifier, challenge };
+    }
+
+    async function initiateLogin() {
+      const issuer = document.getElementById('cfgIssuer').value.replace(/\\/$/, '');
+      const clientId = document.getElementById('cfgClientId').value;
+      const redirectUri = document.getElementById('cfgRedirectUri').value;
+      const scopes = document.getElementById('cfgScopes').value;
+      
+      const pkce = await generatePKCE();
+      const state = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+      
+      sessionStorage.setItem('soauth_code_verifier', pkce.verifier);
+      sessionStorage.setItem('soauth_state', state);
+      sessionStorage.setItem('soauth_issuer', issuer);
+      sessionStorage.setItem('soauth_client_id', clientId);
+      sessionStorage.setItem('soauth_client_secret', document.getElementById('cfgClientSecret').value);
+      sessionStorage.setItem('soauth_redirect_uri', redirectUri);
+
+      const authUrl = new URL(`${issuer}/authorize`);
+      authUrl.searchParams.set('response_type', 'code');
+      authUrl.searchParams.set('client_id', clientId);
+      authUrl.searchParams.set('redirect_uri', redirectUri);
+      authUrl.searchParams.set('scope', scopes);
+      authUrl.searchParams.set('state', state);
+      authUrl.searchParams.set('code_challenge', pkce.challenge);
+      authUrl.searchParams.set('code_challenge_method', 'S256');
+
+      window.location.assign(authUrl.toString());
+    }
+
+    async function handleFetchUser() {
+      const token = sessionStorage.getItem('soauth_access_token');
+      const issuer = sessionStorage.getItem('soauth_issuer') || document.getElementById('cfgIssuer').value;
+      const res = await fetch(`${issuer}/userinfo`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      showOutput('GET /userinfo Result', data);
+    }
+
+    async function handleRefreshToken() {
+      const refreshToken = sessionStorage.getItem('soauth_refresh_token');
+      const issuer = sessionStorage.getItem('soauth_issuer') || document.getElementById('cfgIssuer').value;
+      const clientId = sessionStorage.getItem('soauth_client_id') || document.getElementById('cfgClientId').value;
+      const clientSecret = sessionStorage.getItem('soauth_client_secret');
+
+      const body = new URLSearchParams({
+        grant_type: 'refresh_token',
+        refresh_token: refreshToken,
+        client_id: clientId,
+      });
+      if (clientSecret) body.set('client_secret', clientSecret);
+
+      const res = await fetch(`${issuer}/token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: body.toString()
+      });
+      const data = await res.json();
+      if (res.ok) {
+        sessionStorage.setItem('soauth_access_token', data.access_token);
+        if (data.refresh_token) sessionStorage.setItem('soauth_refresh_token', data.refresh_token);
+      }
+      showOutput('POST /token (Refresh Grant) Result', data);
+    }
+
+    function handleLogout() {
+      const idToken = sessionStorage.getItem('soauth_id_token');
+      const issuer = sessionStorage.getItem('soauth_issuer') || document.getElementById('cfgIssuer').value;
+      sessionStorage.clear();
+      window.location.assign(`${issuer}/logout${idToken ? `?id_token_hint=${idToken}` : ''}`);
+    }
+
+    function showOutput(title, obj) {
+      document.getElementById('outputContainer').style.display = 'block';
+      document.getElementById('outputCode').textContent = `${title}:\n` + JSON.stringify(obj, null, 2);
+    }
+
+    // Auto-detect tokens in session
+    window.addEventListener('DOMContentLoaded', () => {
+      const accessToken = sessionStorage.getItem('soauth_access_token');
+      if (accessToken) {
+        document.getElementById('authStatus').textContent = 'Authenticated';
+        document.getElementById('authStatus').className = 'status-badge status-authenticated';
+        document.getElementById('statusDesc').textContent = 'Active OAuth 2.0 session available.';
+        document.getElementById('btnLogin').style.display = 'none';
+        document.getElementById('btnFetchUser').style.display = 'inline-block';
+        document.getElementById('btnRefresh').style.display = 'inline-block';
+        document.getElementById('btnLogout').style.display = 'inline-block';
+      }
+    });
+  </script>
+</body>
+</html>

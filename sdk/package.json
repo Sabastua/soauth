@@ -1,0 +1,20 @@
+{
+  "name": "@soauth/sdk",
+  "version": "1.0.0",
+  "description": "Zero-dependency isomorphic OAuth 2.0 and OIDC client SDK for soauth",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  }
+}
