@@ -454,8 +454,8 @@ export const DevPortal: React.FC<DevPortalProps> = ({ onBackToLogin }) => {
                 <div className="brand-monogram" style={{ marginBottom: 0, width: '38px', height: '38px', fontSize: '1rem' }}>
                   S
                 </div>
-                <span style={{ fontWeight: 800, fontSize: '1.15rem', letterSpacing: '-0.02em' }}>
-                  soauth <span style={{ color: '#4f46e5' }}>Cloud</span>
+                <span style={{ fontWeight: 800, fontSize: '1.15rem', letterSpacing: '-0.02em', color: '#111827' }}>
+                  soauth Cloud
                 </span>
               </div>
               {onBackToLogin && (
@@ -465,15 +465,15 @@ export const DevPortal: React.FC<DevPortalProps> = ({ onBackToLogin }) => {
                   style={{ padding: '0.35rem 0.7rem', fontSize: '0.78rem' }}
                   onClick={onBackToLogin}
                 >
-                  ← Back to App Login
+                  Back to App Login
                 </button>
               )}
             </div>
 
-            <h1 style={{ fontSize: '1.65rem', fontWeight: 800, letterSpacing: '-0.02em', marginBottom: '0.35rem' }}>
+            <h1 style={{ fontSize: '1.65rem', fontWeight: 800, letterSpacing: '-0.02em', marginBottom: '0.35rem', color: '#111827' }}>
               Sign in to Developer Console
             </h1>
-            <p style={{ fontSize: '0.9rem', color: '#64748b', marginBottom: '1.5rem', lineHeight: 1.5 }}>
+            <p style={{ fontSize: '0.9rem', color: '#6b7280', marginBottom: '1.5rem', lineHeight: 1.5 }}>
               Manage your multi-tenant OAuth 2.1 apps, white-label login branding, RBAC roles, and webhooks.
             </p>
 
@@ -520,7 +520,7 @@ export const DevPortal: React.FC<DevPortalProps> = ({ onBackToLogin }) => {
                   onChange={(e) => setLoginMfaCode(e.target.value)}
                 />
               </div>
-              <button type="submit" disabled={loginLoading} style={{ width: '100%', marginTop: '0.25rem' }}>
+              <button type="submit" className="btn-secondary" disabled={loginLoading} style={{ width: '100%', marginTop: '0.25rem', borderColor: '#111827' }}>
                 {loginLoading ? 'Signing in...' : 'Open Cloud Dashboard'}
               </button>
             </form>
@@ -553,15 +553,15 @@ export const DevPortal: React.FC<DevPortalProps> = ({ onBackToLogin }) => {
           </div>
         </div>
 
-        {/* Right SaaS Showcase Column */}
+        {/* Right SaaS Showcase Column (Pure White) */}
         <div className="split-hero-panel">
           <div>
             <span
               style={{
                 display: 'inline-block',
-                background: 'rgba(99, 102, 241, 0.2)',
-                border: '1px solid rgba(129, 140, 248, 0.35)',
-                color: '#c7d2fe',
+                background: '#ffffff',
+                border: '1px solid #d1d5db',
+                color: '#111827',
                 padding: '0.3rem 0.75rem',
                 borderRadius: '999px',
                 fontSize: '0.75rem',
@@ -578,11 +578,12 @@ export const DevPortal: React.FC<DevPortalProps> = ({ onBackToLogin }) => {
                 lineHeight: 1.2,
                 letterSpacing: '-0.02em',
                 marginBottom: '1rem',
+                color: '#111827',
               }}
             >
               Drop-in authentication built for modern apps.
             </h2>
-            <p style={{ color: '#94a3b8', fontSize: '0.98rem', lineHeight: 1.6, maxWidth: '480px' }}>
+            <p style={{ color: '#4b5563', fontSize: '0.98rem', lineHeight: 1.6, maxWidth: '480px' }}>
               Give your users a 1-click Google &amp; Clerk-grade login experience while retaining 100% control over RS256 JWTs, PKCE S256 security, and multi-tenant RBAC.
             </p>
 
@@ -608,16 +609,16 @@ export const DevPortal: React.FC<DevPortalProps> = ({ onBackToLogin }) => {
                 <div
                   key={feat.title}
                   style={{
-                    background: 'rgba(255, 255, 255, 0.04)',
-                    border: '1px solid rgba(255, 255, 255, 0.08)',
+                    background: '#ffffff',
+                    border: '1px solid #e5e7eb',
                     borderRadius: '12px',
                     padding: '1rem',
                   }}
                 >
-                  <div style={{ fontWeight: 700, fontSize: '0.9rem', color: '#f8fafc', marginBottom: '0.3rem' }}>
+                  <div style={{ fontWeight: 700, fontSize: '0.9rem', color: '#111827', marginBottom: '0.3rem' }}>
                     {feat.title}
                   </div>
-                  <div style={{ fontSize: '0.78rem', color: '#94a3b8', lineHeight: 1.45 }}>{feat.desc}</div>
+                  <div style={{ fontSize: '0.78rem', color: '#6b7280', lineHeight: 1.45 }}>{feat.desc}</div>
                 </div>
               ))}
             </div>
@@ -625,16 +626,16 @@ export const DevPortal: React.FC<DevPortalProps> = ({ onBackToLogin }) => {
 
           <div
             style={{
-              background: 'rgba(2, 6, 23, 0.65)',
-              border: '1px solid rgba(255, 255, 255, 0.1)',
+              background: '#ffffff',
+              border: '1px solid #e5e7eb',
               borderRadius: '12px',
               padding: '1rem 1.25rem',
               fontFamily: 'var(--font-mono)',
               fontSize: '0.78rem',
-              color: '#cbd5e1',
+              color: '#111827',
             }}
           >
-            <div style={{ color: '#818cf8', marginBottom: '0.35rem' }}>// 5-line React integration (@soauth/sdk/react)</div>
+            <div style={{ color: '#6b7280', marginBottom: '0.35rem' }}>// 5-line React integration (@soauth/sdk/react)</div>
             <div>{`<SoAuthProvider issuerUrl="${BACKEND_URL}" clientId="your_client_id">`}</div>
             <div style={{ paddingLeft: '1rem' }}>{`<SignedOut><SignInButton /></SignedOut>`}</div>
             <div style={{ paddingLeft: '1rem' }}>{`<SignedIn><UserButton /></SignedIn>`}</div>
@@ -718,34 +719,34 @@ if (!state.isAuthenticated) {
 
   return (
     <div className="saas-shell">
-      {/* Left SaaS Navigation Sidebar */}
+      {/* Left SaaS Navigation Sidebar (Pure White) */}
       <aside className="saas-sidebar">
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', padding: '0 0.5rem 1.25rem', borderBottom: '1px solid #1e293b' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', padding: '0 0.5rem 1.25rem', borderBottom: '1px solid #e5e7eb' }}>
             <div className="brand-monogram" style={{ marginBottom: 0, width: '36px', height: '36px', fontSize: '0.95rem' }}>
               S
             </div>
             <div>
-              <div style={{ fontWeight: 800, fontSize: '1.05rem', color: '#ffffff', letterSpacing: '-0.02em' }}>
+              <div style={{ fontWeight: 800, fontSize: '1.05rem', color: '#111827', letterSpacing: '-0.02em' }}>
                 soauth Cloud
               </div>
-              <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>Multi-Tenant OIDC SaaS</div>
+              <div style={{ fontSize: '0.72rem', color: '#6b7280' }}>Multi-Tenant OIDC SaaS</div>
             </div>
           </div>
 
           {/* Active App Switcher in Sidebar */}
           {clients.length > 0 && (
             <div style={{ marginTop: '1.15rem', marginBottom: '1.25rem', padding: '0 0.25rem' }}>
-              <label style={{ color: '#94a3b8', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              <label style={{ color: '#6b7280', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                 Selected Application
               </label>
               <select
                 value={selectedClientId}
                 onChange={(e) => setSelectedClientId(e.target.value)}
                 style={{
-                  background: '#1e293b',
-                  color: '#f8fafc',
-                  border: '1px solid #334155',
+                  background: '#ffffff',
+                  color: '#111827',
+                  border: '1px solid #d1d5db',
                   fontSize: '0.82rem',
                   fontWeight: 600,
                   padding: '0.55rem 0.7rem',
@@ -799,15 +800,16 @@ if (!state.isAuthenticated) {
           </nav>
 
           {/* 1-Click Live Hosted Login Test Button */}
-          <div style={{ marginTop: '1.5rem', padding: '0.85rem', background: 'rgba(79, 70, 229, 0.14)', border: '1px solid rgba(99, 102, 241, 0.3)', borderRadius: '10px' }}>
-            <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#e0e7ff', marginBottom: '0.25rem' }}>
+          <div style={{ marginTop: '1.5rem', padding: '0.85rem', background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: '10px' }}>
+            <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#111827', marginBottom: '0.25rem' }}>
               Test Live OAuth Flow
             </div>
-            <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginBottom: '0.65rem', lineHeight: 1.4 }}>
+            <div style={{ fontSize: '0.72rem', color: '#6b7280', marginBottom: '0.65rem', lineHeight: 1.4 }}>
               Launch the hosted login &amp; consent screen for <strong>{activeClient?.app_name ?? 'your app'}</strong>.
             </div>
             <button
               type="button"
+              className="btn-secondary"
               style={{ width: '100%', padding: '0.5rem 0.75rem', fontSize: '0.78rem' }}
               onClick={() => launchHostedLoginDemo(activeClient)}
             >
@@ -817,15 +819,16 @@ if (!state.isAuthenticated) {
         </div>
 
         {/* Bottom Tenant Profile Bar */}
-        <div style={{ borderTop: '1px solid #1e293b', paddingTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+        <div style={{ borderTop: '1px solid #e5e7eb', paddingTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
             <div
               style={{
                 width: '34px',
                 height: '34px',
                 borderRadius: '50%',
-                background: '#4f46e5',
-                color: '#ffffff',
+                background: '#ffffff',
+                border: '1px solid #d1d5db',
+                color: '#111827',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -837,10 +840,10 @@ if (!state.isAuthenticated) {
               {currentUser.email.charAt(0).toUpperCase()}
             </div>
             <div style={{ overflow: 'hidden' }}>
-              <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#f8fafc', textOverflow: 'ellipsis', overflow: 'hidden' }}>
+              <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#111827', textOverflow: 'ellipsis', overflow: 'hidden' }}>
                 {currentUser.email}
               </div>
-              <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>
+              <div style={{ fontSize: '0.7rem', color: '#6b7280' }}>
                 Role: {currentUser.role ?? 'member'}
               </div>
             </div>
@@ -915,9 +918,9 @@ if (!state.isAuthenticated) {
               {createdSecretInfo && (
                 <div
                   style={{
-                    background: '#eef2ff',
-                    border: '1px solid #c7d2fe',
-                    color: '#312e81',
+                    background: '#ffffff',
+                    border: '1px solid #d1d5db',
+                    color: '#111827',
                     padding: '1.25rem',
                     borderRadius: '12px',
                   }}
@@ -944,7 +947,7 @@ if (!state.isAuthenticated) {
                     {createdSecretInfo.client_secret && (
                       <div>
                         <strong style={{ fontSize: '0.84rem' }}>Client Secret: </strong>
-                        <code style={{ background: '#fef08a' }}>{createdSecretInfo.client_secret}</code>
+                        <code>{createdSecretInfo.client_secret}</code>
                         <button
                           type="button"
                           className="btn-secondary"
@@ -962,9 +965,9 @@ if (!state.isAuthenticated) {
               {revealedSecret && (
                 <div
                   style={{
-                    background: '#fffbeb',
-                    border: '1px solid #fde68a',
-                    color: '#92400e',
+                    background: '#ffffff',
+                    border: '1px solid #d1d5db',
+                    color: '#111827',
                     padding: '1.15rem',
                     borderRadius: '12px',
                   }}
@@ -973,7 +976,7 @@ if (!state.isAuthenticated) {
                     Rotated Secret for Client: {revealedSecret.clientId}
                   </h3>
                   <p style={{ fontSize: '0.84rem' }}>
-                    New Client Secret: <code style={{ background: '#fef08a' }}>{revealedSecret.secret}</code>
+                    New Client Secret: <code>{revealedSecret.secret}</code>
                     <button
                       type="button"
                       className="btn-secondary"
@@ -987,7 +990,7 @@ if (!state.isAuthenticated) {
               )}
 
               {showCreateModal && (
-                <div className="surface-card" style={{ border: '2px solid #6366f1' }}>
+                <div className="surface-card" style={{ border: '1px solid #111827' }}>
                   <h2 style={{ fontSize: '1.15rem', fontWeight: 700, marginBottom: '1rem' }}>
                     Register New OAuth 2.1 / OIDC Client
                   </h2>
@@ -1045,7 +1048,9 @@ if (!state.isAuthenticated) {
                       <button type="button" className="btn-secondary" onClick={() => setShowCreateModal(false)}>
                         Cancel
                       </button>
-                      <button type="submit">Create Application →</button>
+                      <button type="submit" className="btn-secondary" style={{ borderColor: '#111827' }}>
+                        Create Application
+                      </button>
                     </div>
                   </form>
                 </div>
@@ -1053,7 +1058,7 @@ if (!state.isAuthenticated) {
 
               <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '1rem' }}>
                 {loading ? (
-                  <p style={{ color: '#64748b' }}>Loading applications...</p>
+                  <p style={{ color: '#6b7280' }}>Loading applications...</p>
                 ) : (
                   clients.map((client) => {
                     const isSelected = selectedClientId === client.id;
@@ -1062,7 +1067,7 @@ if (!state.isAuthenticated) {
                         key={client.id}
                         className="surface-card"
                         style={{
-                          border: isSelected ? '2px solid #4f46e5' : '1px solid var(--border)',
+                          border: isSelected ? '2px solid #111827' : '1px solid var(--border)',
                           display: 'flex',
                           flexDirection: 'column',
                           justifyContent: 'space-between',
@@ -1077,8 +1082,9 @@ if (!state.isAuthenticated) {
                                   width: '36px',
                                   height: '36px',
                                   borderRadius: '10px',
-                                  background: client.primary_color || '#4f46e5',
-                                  color: '#ffffff',
+                                  background: '#ffffff',
+                                  border: '1px solid #d1d5db',
+                                  color: '#111827',
                                   display: 'flex',
                                   alignItems: 'center',
                                   justifyContent: 'center',
@@ -1090,17 +1096,17 @@ if (!state.isAuthenticated) {
                               </div>
                               <div>
                                 <h3 style={{ fontSize: '1.02rem', fontWeight: 700 }}>{client.app_name}</h3>
-                                <span className={client.is_confidential ? 'pill pill-indigo' : 'pill pill-green'}>
+                                <span className="pill">
                                   {client.is_confidential ? 'Confidential + PKCE' : 'Public SPA (PKCE)'}
                                 </span>
                               </div>
                             </div>
-                            {isSelected && <span className="pill pill-indigo">Active</span>}
+                            {isSelected && <span className="pill">Active</span>}
                           </div>
 
                           <div style={{ fontSize: '0.82rem', display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#f8fafc', padding: '0.45rem 0.65rem', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
-                              <span style={{ color: '#64748b', fontSize: '0.76rem' }}>Client ID</span>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#ffffff', padding: '0.45rem 0.65rem', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
+                              <span style={{ color: '#6b7280', fontSize: '0.76rem' }}>Client ID</span>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                                 <code style={{ border: 'none', background: 'transparent', padding: 0 }}>{client.id.slice(0, 18)}…</code>
                                 <button
@@ -1114,13 +1120,13 @@ if (!state.isAuthenticated) {
                               </div>
                             </div>
 
-                            <div style={{ color: '#64748b', fontSize: '0.78rem' }}>
+                            <div style={{ color: '#6b7280', fontSize: '0.78rem' }}>
                               Callback: <code>{client.redirect_uris[0]}</code>
                             </div>
                           </div>
                         </div>
 
-                        <div style={{ display: 'flex', gap: '0.45rem', flexWrap: 'wrap', paddingTop: '0.75rem', borderTop: '1px solid #f1f5f9' }}>
+                        <div style={{ display: 'flex', gap: '0.45rem', flexWrap: 'wrap', paddingTop: '0.75rem', borderTop: '1px solid #e5e7eb' }}>
                           <button
                             type="button"
                             className="btn-secondary"
@@ -1181,7 +1187,7 @@ if (!state.isAuthenticated) {
                     <h3 style={{ fontSize: '1.08rem', fontWeight: 700 }}>
                       Drop-In Integration Snippet ({activeClient?.app_name ?? 'Default App'})
                     </h3>
-                    <p style={{ fontSize: '0.82rem', color: '#64748b' }}>
+                    <p style={{ fontSize: '0.82rem', color: '#6b7280' }}>
                       Pre-filled with <code>clientId="{sampleClientId}"</code>
                     </p>
                   </div>
@@ -1190,9 +1196,13 @@ if (!state.isAuthenticated) {
                       <button
                         key={tab}
                         type="button"
-                        className={snippetTab === tab ? '' : 'btn-secondary'}
+                        className="btn-secondary"
                         onClick={() => setSnippetTab(tab)}
-                        style={{ fontSize: '0.78rem', padding: '0.4rem 0.75rem' }}
+                        style={{
+                          fontSize: '0.78rem',
+                          padding: '0.4rem 0.75rem',
+                          borderColor: snippetTab === tab ? '#111827' : '#d1d5db',
+                        }}
                       >
                         {tab === 'react' ? 'React (@soauth/sdk/react)' : tab === 'nextjs' ? 'Next.js (Auth.js)' : 'Vanilla TS'}
                       </button>
@@ -1210,8 +1220,9 @@ if (!state.isAuthenticated) {
 
                 <pre
                   style={{
-                    background: '#0f172a',
-                    color: '#e2e8f0',
+                    background: '#ffffff',
+                    color: '#111827',
+                    border: '1px solid #e5e7eb',
                     padding: '1.25rem',
                     borderRadius: '10px',
                     fontFamily: 'var(--font-mono)',
@@ -1233,7 +1244,7 @@ if (!state.isAuthenticated) {
                 <h2 style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: '0.25rem' }}>
                   Customize Hosted Login &amp; Webhooks
                 </h2>
-                <p style={{ fontSize: '0.82rem', color: '#64748b', marginBottom: '1.25rem' }}>
+                <p style={{ fontSize: '0.82rem', color: '#6b7280', marginBottom: '1.25rem' }}>
                   Editing <strong>{activeClient.app_name}</strong>
                 </p>
 
@@ -1287,7 +1298,7 @@ if (!state.isAuthenticated) {
                     </div>
                   </div>
 
-                  <hr style={{ border: 'none', borderTop: '1px solid #e2e8f0', margin: '0.5rem 0' }} />
+                  <hr style={{ border: 'none', borderTop: '1px solid #e5e7eb', margin: '0.5rem 0' }} />
 
                   <div>
                     <label>HMAC-SHA256 Webhook Endpoint URL</label>
@@ -1300,8 +1311,8 @@ if (!state.isAuthenticated) {
                   </div>
 
                   {activeClient.webhook_secret && (
-                    <div style={{ fontSize: '0.8rem', background: '#f8fafc', padding: '0.6rem 0.8rem', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                      <span style={{ color: '#64748b' }}>Signing Secret (<code>X-SoAuth-Signature</code>): </span>
+                    <div style={{ fontSize: '0.8rem', background: '#ffffff', padding: '0.6rem 0.8rem', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
+                      <span style={{ color: '#6b7280' }}>Signing Secret (<code>X-SoAuth-Signature</code>): </span>
                       <code>{activeClient.webhook_secret}</code>
                       <button
                         type="button"
@@ -1315,7 +1326,7 @@ if (!state.isAuthenticated) {
                   )}
 
                   <div style={{ display: 'flex', gap: '0.65rem', marginTop: '0.35rem' }}>
-                    <button type="submit" disabled={savingSettings}>
+                    <button type="submit" className="btn-secondary" style={{ borderColor: '#111827' }} disabled={savingSettings}>
                       {savingSettings ? 'Saving...' : 'Save Branding & Webhooks'}
                     </button>
                     {webhookUrl && (
@@ -1330,13 +1341,13 @@ if (!state.isAuthenticated) {
               {/* Live Real-Time Login Card Preview */}
               <section
                 style={{
-                  background: 'radial-gradient(circle at 30% 20%, rgba(79,70,229,0.08), #f1f5f9)',
-                  border: '1px solid #cbd5e1',
+                  background: '#ffffff',
+                  border: '1px solid #e5e7eb',
                   borderRadius: '16px',
                   padding: '1.5rem',
                 }}
               >
-                <div style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#64748b', marginBottom: '0.85rem', textAlign: 'center' }}>
+                <div style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#6b7280', marginBottom: '0.85rem', textAlign: 'center' }}>
                   Live Hosted Login Preview
                 </div>
                 <div
@@ -1344,8 +1355,7 @@ if (!state.isAuthenticated) {
                   style={{
                     maxWidth: '100%',
                     padding: '1.5rem',
-                    borderTop: `4px solid ${brandPrimaryColor || '#4f46e5'}`,
-                    boxShadow: '0 10px 25px -5px rgba(15, 23, 42, 0.08)',
+                    boxShadow: 'var(--shadow-sm)',
                   }}
                 >
                   <header>
@@ -1359,7 +1369,6 @@ if (!state.isAuthenticated) {
                       <div
                         className="brand-monogram"
                         style={{
-                          background: brandPrimaryColor || '#4f46e5',
                           width: '40px',
                           height: '40px',
                           fontSize: '1rem',
@@ -1374,7 +1383,8 @@ if (!state.isAuthenticated) {
 
                   <button
                     type="button"
-                    style={{ background: brandPrimaryColor || '#4f46e5', width: '100%', pointerEvents: 'none' }}
+                    className="btn-secondary"
+                    style={{ width: '100%', pointerEvents: 'none' }}
                   >
                     Continue as {currentUser.email.split('@')[0]}
                   </button>
@@ -1398,7 +1408,7 @@ if (!state.isAuthenticated) {
                   <h2 style={{ fontSize: '1.12rem', fontWeight: 700 }}>
                     User Directory &amp; Role-Based Access Control ({appUsers.length})
                   </h2>
-                  <p style={{ fontSize: '0.84rem', color: '#64748b' }}>
+                  <p style={{ fontSize: '0.84rem', color: '#6b7280' }}>
                     Roles are cryptographically signed into RS256 Access &amp; ID Tokens (<code>role</code> and <code>roles</code> claims).
                   </p>
                 </div>
@@ -1408,12 +1418,12 @@ if (!state.isAuthenticated) {
                   style={{ fontSize: '0.8rem', padding: '0.4rem 0.75rem' }}
                   onClick={() => void loadAppUsers(activeClient.id)}
                 >
-                  ↻ Refresh Directory
+                  Refresh Directory
                 </button>
               </div>
 
               {usersLoading ? (
-                <p style={{ color: '#64748b', fontSize: '0.85rem' }}>Loading users...</p>
+                <p style={{ color: '#6b7280', fontSize: '0.85rem' }}>Loading users...</p>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
                   {appUsers.map((u) => (
@@ -1424,9 +1434,9 @@ if (!state.isAuthenticated) {
                         justifyContent: 'space-between',
                         alignItems: 'center',
                         padding: '0.95rem 1.1rem',
-                        border: '1px solid #e2e8f0',
+                        border: '1px solid #e5e7eb',
                         borderRadius: '10px',
-                        background: '#f8fafc',
+                        background: '#ffffff',
                         flexWrap: 'wrap',
                         gap: '0.75rem',
                       }}
@@ -1437,9 +1447,9 @@ if (!state.isAuthenticated) {
                             width: '38px',
                             height: '38px',
                             borderRadius: '50%',
-                            background: '#eef2ff',
-                            color: '#4338ca',
-                            border: '1px solid #c7d2fe',
+                            background: '#ffffff',
+                            color: '#111827',
+                            border: '1px solid #d1d5db',
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
@@ -1450,13 +1460,13 @@ if (!state.isAuthenticated) {
                         </div>
                         <div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
-                            <strong style={{ fontSize: '0.92rem', color: '#0f172a' }}>{u.email}</strong>
-                            <span className={u.email_verified ? 'pill pill-green' : 'pill pill-amber'}>
-                              {u.email_verified ? '✓ Verified' : 'Unverified'}
+                            <strong style={{ fontSize: '0.92rem', color: '#111827' }}>{u.email}</strong>
+                            <span className="pill">
+                              {u.email_verified ? 'Verified' : 'Unverified'}
                             </span>
-                            {u.is_mfa_enabled && <span className="pill pill-indigo">2FA</span>}
+                            {u.is_mfa_enabled && <span className="pill">2FA</span>}
                           </div>
-                          <div style={{ fontSize: '0.76rem', color: '#64748b', marginTop: '0.15rem' }}>
+                          <div style={{ fontSize: '0.76rem', color: '#6b7280', marginTop: '0.15rem' }}>
                             Sub: <code>{u.id}</code> · Active Sessions: <strong>{u.active_sessions}</strong>
                           </div>
                         </div>
@@ -1498,29 +1508,20 @@ if (!state.isAuthenticated) {
                     <span className="kpi-label">Monthly Active Users (MAU)</span>
                     <span className="kpi-value">
                       {saasOverview.plan.mau_used}{' '}
-                      <span style={{ fontSize: '0.85rem', fontWeight: 500, color: '#64748b' }}>
+                      <span style={{ fontSize: '0.85rem', fontWeight: 500, color: '#6b7280' }}>
                         / {saasOverview.plan.mau_limit.toLocaleString()}
                       </span>
                     </span>
-                    <div style={{ width: '100%', height: '6px', background: '#e2e8f0', borderRadius: '999px', overflow: 'hidden', marginTop: '0.25rem' }}>
-                      <div
-                        style={{
-                          width: `${Math.min(100, Math.max(4, (saasOverview.plan.mau_used / saasOverview.plan.mau_limit) * 100))}%`,
-                          height: '100%',
-                          background: 'linear-gradient(90deg, #4f46e5, #0ea5e9)',
-                        }}
-                      />
-                    </div>
                   </div>
                   <div className="kpi-card">
                     <span className="kpi-label">Registered OAuth Apps</span>
                     <span className="kpi-value">{saasOverview.plan.total_clients}</span>
-                    <span style={{ fontSize: '0.76rem', color: '#15803d', fontWeight: 600 }}>Multi-Tenant Isolated</span>
+                    <span style={{ fontSize: '0.76rem', color: '#6b7280', fontWeight: 600 }}>Multi-Tenant Isolated</span>
                   </div>
                   <div className="kpi-card">
                     <span className="kpi-label">Total Issued Sessions</span>
                     <span className="kpi-value">{saasOverview.plan.total_sessions}</span>
-                    <span style={{ fontSize: '0.76rem', color: '#64748b' }}>PKCE S256 + Rotating Refresh</span>
+                    <span style={{ fontSize: '0.76rem', color: '#6b7280' }}>PKCE S256 + Rotating Refresh</span>
                   </div>
                 </div>
               )}
@@ -1530,15 +1531,15 @@ if (!state.isAuthenticated) {
                 <section className="surface-card">
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
                     <h3 style={{ fontSize: '1rem', fontWeight: 700 }}>Email Verification (OIDC)</h3>
-                    <span className={currentUser.email_verified ? 'pill pill-green' : 'pill pill-amber'}>
-                      {currentUser.email_verified ? '✓ Verified' : 'Unverified'}
+                    <span className="pill">
+                      {currentUser.email_verified ? 'Verified' : 'Unverified'}
                     </span>
                   </div>
-                  <p style={{ fontSize: '0.82rem', color: '#64748b', marginBottom: '0.85rem' }}>
+                  <p style={{ fontSize: '0.82rem', color: '#6b7280', marginBottom: '0.85rem' }}>
                     Verifies ownership of <strong>{currentUser.email}</strong> for OIDC <code>email_verified</code> claims.
                   </p>
                   {!currentUser.email_verified && !emailOtpSent && (
-                    <button type="button" onClick={handleSendEmailOtp} style={{ fontSize: '0.82rem' }}>
+                    <button type="button" className="btn-secondary" onClick={handleSendEmailOtp} style={{ fontSize: '0.82rem' }}>
                       Send 6-Digit Email OTP
                     </button>
                   )}
@@ -1554,7 +1555,7 @@ if (!state.isAuthenticated) {
                           onChange={(e) => setEmailOtpCode(e.target.value)}
                         />
                       </div>
-                      <button type="submit">Confirm</button>
+                      <button type="submit" className="btn-secondary">Confirm</button>
                     </form>
                   )}
                 </section>
@@ -1568,23 +1569,23 @@ if (!state.isAuthenticated) {
                       </button>
                     ) : (
                       !mfaSetupData && (
-                        <button type="button" style={{ fontSize: '0.78rem', padding: '0.4rem 0.75rem' }} onClick={handleStartMfaSetup}>
+                        <button type="button" className="btn-secondary" style={{ fontSize: '0.78rem', padding: '0.4rem 0.75rem' }} onClick={handleStartMfaSetup}>
                           + Enable 2FA
                         </button>
                       )
                     )}
                   </div>
-                  <p style={{ fontSize: '0.82rem', color: '#64748b' }}>
+                  <p style={{ fontSize: '0.82rem', color: '#6b7280' }}>
                     RFC 6238 Time-Based One-Time Password protection for Google Authenticator, Authy, or 1Password.
                   </p>
 
                   {mfaSetupData && (
-                    <div style={{ marginTop: '0.85rem', padding: '0.9rem', background: '#f8fafc', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
+                    <div style={{ marginTop: '0.85rem', padding: '0.9rem', background: '#ffffff', borderRadius: '8px', border: '1px solid #d1d5db' }}>
                       <div style={{ fontSize: '0.8rem', marginBottom: '0.4rem' }}>
                         Secret: <code>{mfaSetupData.secret}</code>
                       </div>
                       {mfaSetupData.current_test_code && (
-                        <div style={{ fontSize: '0.78rem', color: '#4338ca', marginBottom: '0.6rem' }}>
+                        <div style={{ fontSize: '0.78rem', color: '#111827', marginBottom: '0.6rem' }}>
                           Current 30s Code: <strong>{mfaSetupData.current_test_code}</strong>
                         </div>
                       )}
@@ -1596,7 +1597,7 @@ if (!state.isAuthenticated) {
                           onChange={(e) => setMfaVerifyCode(e.target.value)}
                           placeholder="6-digit code"
                         />
-                        <button type="submit" disabled={mfaSubmitting}>
+                        <button type="submit" className="btn-secondary" disabled={mfaSubmitting}>
                           Activate
                         </button>
                       </form>
@@ -1610,13 +1611,13 @@ if (!state.isAuthenticated) {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                   <div>
                     <h3 style={{ fontSize: '1.05rem', fontWeight: 700 }}>Active Device Sessions ({sessions.length})</h3>
-                    <p style={{ fontSize: '0.82rem', color: '#64748b' }}>
+                    <p style={{ fontSize: '0.82rem', color: '#6b7280' }}>
                       Revoking a session immediately invalidates its refresh token family.
                     </p>
                   </div>
                 </div>
                 {sessionsLoading ? (
-                  <p style={{ color: '#64748b', fontSize: '0.85rem' }}>Loading sessions...</p>
+                  <p style={{ color: '#6b7280', fontSize: '0.85rem' }}>Loading sessions...</p>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
                     {sessions.map((sess) => (
@@ -1628,16 +1629,16 @@ if (!state.isAuthenticated) {
                           alignItems: 'center',
                           padding: '0.8rem 1rem',
                           borderRadius: '8px',
-                          border: sess.is_current ? '1px solid #c7d2fe' : '1px solid #e2e8f0',
-                          background: sess.is_current ? '#eef2ff' : '#f8fafc',
+                          border: sess.is_current ? '1px solid #111827' : '1px solid #e5e7eb',
+                          background: '#ffffff',
                         }}
                       >
                         <div style={{ fontSize: '0.82rem' }}>
                           <div style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                             <span>Client: <code>{sess.client_id}</code></span>
-                            {sess.is_current && <span className="pill pill-indigo">Current Device</span>}
+                            {sess.is_current && <span className="pill">Current Device</span>}
                           </div>
-                          <div style={{ color: '#64748b', fontSize: '0.76rem', marginTop: '0.15rem' }}>
+                          <div style={{ color: '#6b7280', fontSize: '0.76rem', marginTop: '0.15rem' }}>
                             IP: {sess.ip_address ?? 'local'} · Signed in: {new Date(sess.auth_time).toLocaleString()}
                           </div>
                         </div>
@@ -1661,7 +1662,7 @@ if (!state.isAuthenticated) {
                   <h3 style={{ fontSize: '1.05rem', fontWeight: 700, marginBottom: '0.25rem' }}>
                     Security Audit Log Stream ({saasOverview.audit_logs.length})
                   </h3>
-                  <p style={{ fontSize: '0.82rem', color: '#64748b', marginBottom: '1rem' }}>
+                  <p style={{ fontSize: '0.82rem', color: '#6b7280', marginBottom: '1rem' }}>
                     Real-time trace of authentication events, token issuances, RBAC updates, and replay detections.
                   </p>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem', maxHeight: '320px', overflowY: 'auto' }}>
@@ -1671,8 +1672,8 @@ if (!state.isAuthenticated) {
                         style={{
                           padding: '0.6rem 0.85rem',
                           borderRadius: '8px',
-                          border: '1px solid #e2e8f0',
-                          background: '#f8fafc',
+                          border: '1px solid #e5e7eb',
+                          background: '#ffffff',
                           fontSize: '0.8rem',
                           display: 'flex',
                           justifyContent: 'space-between',
@@ -1681,21 +1682,12 @@ if (!state.isAuthenticated) {
                         }}
                       >
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', flexWrap: 'wrap' }}>
-                          <span
-                            className={
-                              log.status === 'failure'
-                                ? 'pill pill-amber'
-                                : log.status === 'warning'
-                                  ? 'pill pill-amber'
-                                  : 'pill pill-indigo'
-                            }
-                            style={{ fontFamily: 'var(--font-mono)' }}
-                          >
+                          <span className="pill" style={{ fontFamily: 'var(--font-mono)' }}>
                             {log.event_type}
                           </span>
-                          <span style={{ color: '#1e293b' }}>{log.details}</span>
+                          <span style={{ color: '#111827' }}>{log.details}</span>
                         </div>
-                        <span style={{ color: '#64748b', fontSize: '0.74rem', whiteSpace: 'nowrap' }}>
+                        <span style={{ color: '#6b7280', fontSize: '0.74rem', whiteSpace: 'nowrap' }}>
                           {new Date(log.created_at).toLocaleTimeString()}
                         </span>
                       </div>

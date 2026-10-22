@@ -59,7 +59,6 @@ export const LoginView: React.FC<LoginViewProps> = ({
     }
   }, [context.clientId]);
 
-  const brandColor = branding?.primary_color || '#4f46e5';
   const displayAppName = branding?.app_name || context.appName;
   const appInitial = displayAppName.trim().charAt(0).toUpperCase() || 'S';
 
@@ -83,7 +82,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
 
   return (
     <div className="auth-stage">
-      <main className="oauth-card" style={{ borderTop: `4px solid ${brandColor}` }}>
+      <main className="oauth-card">
         <header>
           {branding?.logo_url ? (
             <img
@@ -97,12 +96,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
               }}
             />
           ) : (
-            <div
-              className="brand-monogram"
-              style={{
-                background: `linear-gradient(135deg, ${brandColor}, #0ea5e9)`,
-              }}
-            >
+            <div className="brand-monogram">
               {appInitial}
             </div>
           )}
@@ -126,8 +120,8 @@ export const LoginView: React.FC<LoginViewProps> = ({
                 gap: '0.85rem',
                 padding: '1rem',
                 borderRadius: '12px',
-                border: '1px solid #c7d2fe',
-                background: 'linear-gradient(135deg, #eef2ff 0%, #f8fafc 100%)',
+                border: '1px solid #e5e7eb',
+                background: '#ffffff',
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', overflow: 'hidden' }}>
@@ -136,15 +130,15 @@ export const LoginView: React.FC<LoginViewProps> = ({
                     width: '42px',
                     height: '42px',
                     borderRadius: '50%',
-                    background: brandColor,
-                    color: '#ffffff',
+                    background: '#ffffff',
+                    border: '1px solid #d1d5db',
+                    color: '#111827',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     fontWeight: 700,
                     fontSize: '1.05rem',
                     flexShrink: 0,
-                    boxShadow: '0 4px 10px rgba(79, 70, 229, 0.25)',
                   }}
                 >
                   {ssoUser.email.charAt(0).toUpperCase()}
@@ -154,7 +148,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
                     style={{
                       fontWeight: 700,
                       fontSize: '0.92rem',
-                      color: '#0f172a',
+                      color: '#111827',
                       textOverflow: 'ellipsis',
                       overflow: 'hidden',
                     }}
@@ -164,23 +158,11 @@ export const LoginView: React.FC<LoginViewProps> = ({
                   <div
                     style={{
                       fontSize: '0.75rem',
-                      color: '#15803d',
+                      color: '#6b7280',
                       fontWeight: 600,
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.35rem',
                       marginTop: '0.15rem',
                     }}
                   >
-                    <span
-                      style={{
-                        width: '7px',
-                        height: '7px',
-                        borderRadius: '50%',
-                        background: '#22c55e',
-                        display: 'inline-block',
-                      }}
-                    />
                     Active SSO Session
                   </div>
                 </div>
@@ -189,10 +171,11 @@ export const LoginView: React.FC<LoginViewProps> = ({
 
             <button
               type="button"
-              style={{ background: brandColor, width: '100%' }}
+              className="btn-secondary"
+              style={{ width: '100%' }}
               onClick={() => onSsoContinue(ssoUser.email)}
             >
-              Continue as {ssoUser.email.split('@')[0]} →
+              Continue as {ssoUser.email.split('@')[0]}
             </button>
 
             <button
@@ -285,7 +268,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
                         e.preventDefault();
                         onNavigateToForgotPassword();
                       }}
-                      style={{ fontSize: '0.78rem', color: brandColor, fontWeight: 600, textDecoration: 'none' }}
+                      style={{ fontSize: '0.78rem', color: '#111827', fontWeight: 600, textDecoration: 'none' }}
                     >
                       Forgot password?
                     </a>
@@ -320,12 +303,12 @@ export const LoginView: React.FC<LoginViewProps> = ({
                 </div>
               )}
 
-              <button type="submit" style={{ background: brandColor, width: '100%', marginTop: '0.25rem' }}>
-                {requireMfa ? 'Verify 2FA & Continue →' : 'Continue →'}
+              <button type="submit" className="btn-secondary" style={{ width: '100%', marginTop: '0.25rem' }}>
+                {requireMfa ? 'Verify 2FA & Continue' : 'Continue'}
               </button>
 
               {onNavigateToSignUp && (
-                <p style={{ fontSize: '0.84rem', textAlign: 'center', color: '#64748b', marginTop: '0.25rem' }}>
+                <p style={{ fontSize: '0.84rem', textAlign: 'center', color: '#6b7280', marginTop: '0.25rem' }}>
                   Don't have an account?{' '}
                   <a
                     href="#signup"
@@ -333,7 +316,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
                       e.preventDefault();
                       onNavigateToSignUp();
                     }}
-                    style={{ color: brandColor, fontWeight: 700, textDecoration: 'none' }}
+                    style={{ color: '#111827', fontWeight: 700, textDecoration: 'none' }}
                   >
                     Sign up
                   </a>
@@ -357,7 +340,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
                 href={branding.terms_of_service_url}
                 target="_blank"
                 rel="noreferrer"
-                style={{ color: '#64748b', textDecoration: 'none' }}
+                style={{ color: '#6b7280', textDecoration: 'none' }}
               >
                 Terms of Service
               </a>
@@ -367,7 +350,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
                 href={branding.privacy_policy_url}
                 target="_blank"
                 rel="noreferrer"
-                style={{ color: '#64748b', textDecoration: 'none' }}
+                style={{ color: '#6b7280', textDecoration: 'none' }}
               >
                 Privacy Policy
               </a>
@@ -384,9 +367,9 @@ export const LoginView: React.FC<LoginViewProps> = ({
                 e.preventDefault();
                 onNavigateToPortal();
               }}
-              style={{ color: '#4f46e5', fontWeight: 600, textDecoration: 'none' }}
+              style={{ color: '#111827', fontWeight: 600, textDecoration: 'none' }}
             >
-              Cloud Dashboard →
+              Cloud Dashboard
             </a>
           )}
         </footer>

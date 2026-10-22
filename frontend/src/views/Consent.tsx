@@ -64,9 +64,9 @@ export const ConsentView: React.FC<ConsentViewProps> = ({
                 width: '42px',
                 height: '42px',
                 borderRadius: '50%',
-                background: '#eef2ff',
-                border: '2px solid #c7d2fe',
-                color: '#4338ca',
+                background: '#ffffff',
+                border: '1px solid #d1d5db',
+                color: '#111827',
                 display: 'inline-flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -80,7 +80,7 @@ export const ConsentView: React.FC<ConsentViewProps> = ({
 
           <h1>Authorize {context.appName}</h1>
           <p>
-            Signed in as <strong style={{ color: '#0f172a' }}>{userEmail}</strong>
+            Signed in as <strong style={{ color: '#111827' }}>{userEmail}</strong>
           </p>
         </header>
 
@@ -91,7 +91,7 @@ export const ConsentView: React.FC<ConsentViewProps> = ({
               fontWeight: 700,
               textTransform: 'uppercase',
               letterSpacing: '0.05em',
-              color: '#64748b',
+              color: '#6b7280',
               marginBottom: '0.6rem',
             }}
           >
@@ -111,8 +111,8 @@ export const ConsentView: React.FC<ConsentViewProps> = ({
                     alignItems: 'flex-start',
                     gap: '0.7rem',
                     padding: '0.75rem 0.85rem',
-                    background: '#f8fafc',
-                    border: '1px solid #e2e8f0',
+                    background: '#ffffff',
+                    border: '1px solid #e5e7eb',
                     borderRadius: '10px',
                   }}
                 >
@@ -121,8 +121,9 @@ export const ConsentView: React.FC<ConsentViewProps> = ({
                       width: '20px',
                       height: '20px',
                       borderRadius: '50%',
-                      background: '#dcfce7',
-                      color: '#15803d',
+                      background: '#ffffff',
+                      border: '1px solid #d1d5db',
+                      color: '#111827',
                       display: 'inline-flex',
                       alignItems: 'center',
                       justifyContent: 'center',
@@ -135,11 +136,11 @@ export const ConsentView: React.FC<ConsentViewProps> = ({
                     ✓
                   </span>
                   <div>
-                    <div style={{ fontSize: '0.86rem', fontWeight: 700, color: '#0f172a' }}>
+                    <div style={{ fontSize: '0.86rem', fontWeight: 700, color: '#111827' }}>
                       {info.title}{' '}
                       <code style={{ fontSize: '0.72rem', marginLeft: '0.25rem' }}>{scope}</code>
                     </div>
-                    <div style={{ fontSize: '0.78rem', color: '#64748b', marginTop: '0.15rem' }}>
+                    <div style={{ fontSize: '0.78rem', color: '#6b7280', marginTop: '0.15rem' }}>
                       {info.desc}
                     </div>
                   </div>
@@ -151,12 +152,12 @@ export const ConsentView: React.FC<ConsentViewProps> = ({
 
         <div
           style={{
-            background: '#f8fafc',
-            border: '1px dashed #cbd5e1',
+            background: '#ffffff',
+            border: '1px dashed #d1d5db',
             borderRadius: '8px',
             padding: '0.6rem 0.8rem',
             fontSize: '0.76rem',
-            color: '#64748b',
+            color: '#6b7280',
             wordBreak: 'break-all',
           }}
         >
@@ -175,11 +176,12 @@ export const ConsentView: React.FC<ConsentViewProps> = ({
           </button>
           <button
             type="button"
-            style={{ flex: 1.4 }}
+            className="btn-secondary"
+            style={{ flex: 1.4, borderColor: '#111827' }}
             disabled={submitting}
             onClick={() => handleClick(true)}
           >
-            {submitting ? 'Authorizing...' : 'Allow Access →'}
+            {submitting ? 'Authorizing...' : 'Allow Access'}
           </button>
         </div>
 
