@@ -12,10 +12,15 @@ import type {
   UserRow,
 } from './schema.js';
 
+let devStoreInitialized = false;
+
 /**
  * Embedded in-memory store for instant local manual testing without external PostgreSQL/Redis.
  */
 export async function initializeDevMemoryStore(): Promise<void> {
+  if (devStoreInitialized) return;
+  devStoreInitialized = true;
+
   const usersStore = new Map<string, UserRow>();
   const clientsStore = new Map<string, RegisteredClientRow>();
   const sessionsStore = new Map<string, ActiveSessionRow>();
@@ -39,16 +44,32 @@ export async function initializeDevMemoryStore(): Promise<void> {
 
   // 2. Seed initial reference OAuth client
   const clientSecretHash = await hashSecretArgon2id('soauth-dev-confidential-secret-2026');
+  const dynamicRedirectUris = [
+    'http://localhost:3000/oauth/callback',
+    'http://localhost:3000/callback',
+    'http://localhost:4000/callback',
+    'https://oauth.pstmn.io/v1/callback',
+  ];
+  if (process.env.VERCEL_URL) {
+    dynamicRedirectUris.push(`https://${process.env.VERCEL_URL}/callback`);
+    dynamicRedirectUris.push(`https://${process.env.VERCEL_URL}/oauth/callback`);
+  }
+  if (process.env.VERCEL_PROJECT_PRODUCTION_URL) {
+    dynamicRedirectUris.push(`https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}/callback`);
+    dynamicRedirectUris.push(`https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}/oauth/callback`);
+  }
+  if (process.env.ISSUER_URL) {
+    const cleanIssuer = process.env.ISSUER_URL.replace(/\/$/, '');
+    dynamicRedirectUris.push(`${cleanIssuer}/callback`);
+    dynamicRedirectUris.push(`${cleanIssuer}/oauth/callback`);
+  }
+
   const defaultClient: RegisteredClientRow = {
     id: '00000000-0000-4000-8000-000000000001',
     client_secret_hash: clientSecretHash,
     app_name: 'soauth Reference Web App',
     is_confidential: true,
-    redirect_uris: [
-      'http://localhost:3000/oauth/callback',
-      'http://localhost:4000/callback',
-      'https://oauth.pstmn.io/v1/callback',
-    ],
+    redirect_uris: Array.from(new Set(dynamicRedirectUris)),
     allowed_scopes: ['openid', 'profile', 'email', 'offline_access'],
     require_pkce: true,
     created_at: new Date(),
@@ -82,6 +103,24 @@ export async function initializeDevMemoryStore(): Promise<void> {
     const user = usersStore.get(userId);
     if (user) {
       user.password_hash = newPasswordHash;
+      user.updated_at = new Date();
+    }
+  };
+
+  userRepository.enableMfa = async (userId: string, secretEncrypted: string) => {
+    const user = usersStore.get(userId);
+    if (user) {
+      user.is_mfa_enabled = true;
+      user.mfa_secret_encrypted = secretEncrypted;
+      user.updated_at = new Date();
+    }
+  };
+
+  userRepository.disableMfa = async (userId: string) => {
+    const user = usersStore.get(userId);
+    if (user) {
+      user.is_mfa_enabled = false;
+      user.mfa_secret_encrypted = null;
       user.updated_at = new Date();
     }
   };
@@ -184,6 +223,25 @@ export async function initializeDevMemoryStore(): Promise<void> {
     return s;
   };
 
+  sessionAndTokenRepository.findActiveSessionByTokenHash = async (tokenHash: string) => {
+    for (const s of sessionsStore.values()) {
+      if (s.session_token_hash === tokenHash && !s.is_revoked && new Date(s.expires_at).getTime() > Date.now()) {
+        return s;
+      }
+    }
+    return undefined;
+  };
+
+  sessionAndTokenRepository.listActiveSessionsForUser = async (userId: string) => {
+    const list: ActiveSessionRow[] = [];
+    for (const s of sessionsStore.values()) {
+      if (s.user_id === userId && !s.is_revoked && new Date(s.expires_at).getTime() > Date.now()) {
+        list.push(s);
+      }
+    }
+    return list;
+  };
+
   sessionAndTokenRepository.createRefreshToken = async (tokenData) => {
     const id = randomUUID();
     const row: RefreshTokenRow = {
@@ -258,6 +316,14 @@ export async function initializeDevMemoryStore(): Promise<void> {
   }) as typeof redis.set;
 
   redis.get = (async (key: string) => redisStore.get(key) ?? null) as typeof redis.get;
+
+  redis.del = (async (...keys: string[]) => {
+    let count = 0;
+    for (const k of keys) {
+      if (redisStore.delete(k)) count++;
+    }
+    return count;
+  }) as unknown as typeof redis.del;
 
   redis.eval = (async (_script: string, _numKeys: number, activeKey: string, usedKey: string) => {
     const usedState = redisStore.get(usedKey);

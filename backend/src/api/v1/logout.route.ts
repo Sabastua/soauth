@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { sha256Hex } from '../../core/crypto.js';
 import { tokenCryptoManager } from '../../core/tokens.js';
 import { clientRepository } from '../../repositories/client.repo.js';
 import { sessionAndTokenRepository } from '../../repositories/session.repo.js';
@@ -32,6 +33,18 @@ export async function registerLogoutRoutes(app: FastifyInstance): Promise<void> 
       } catch {
         // Continue even if hint is expired, but do not trust untrusted claims
       }
+    }
+
+    // 1b. Also check if an SSO cookie session is present
+    const rawSsoToken = request.cookies['soauth_sso_token'];
+    if (rawSsoToken) {
+      const ssoSession = await sessionAndTokenRepository.findActiveSessionByTokenHash(
+        sha256Hex(rawSsoToken),
+      );
+      if (ssoSession) {
+        targetSessionId = targetSessionId ?? ssoSession.id;
+      }
+      reply.clearCookie('soauth_sso_token', { path: '/' });
     }
 
     // 2. If a session is identified, revoke the entire session family

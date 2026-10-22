@@ -31,6 +31,20 @@ interface ActiveSigningKeyMaterial {
  * Manages asymmetric signing keys (RS256 / ES256), JWT issuance, and RFC 7517 JWKS exposure.
  * Supports persistent loading/saving from disk or environment variables.
  */
+function resolveDefaultIssuer(): string {
+  if (process.env.OIDC_ISSUER) return process.env.OIDC_ISSUER.replace(/\/$/, '');
+  if (process.env.ISSUER_URL) return process.env.ISSUER_URL.replace(/\/$/, '');
+  if (process.env.NODE_ENV !== 'test') {
+    if (process.env.VERCEL_PROJECT_PRODUCTION_URL) {
+      return `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`;
+    }
+    if (process.env.VERCEL_URL) {
+      return `https://${process.env.VERCEL_URL}`;
+    }
+  }
+  return 'https://auth.soauth.internal';
+}
+
 export class TokenCryptoManager {
   private activeKey: ActiveSigningKeyMaterial | null = null;
   private retiredPublicKeys: Map<string, ActiveSigningKeyMaterial> = new Map();
@@ -40,10 +54,10 @@ export class TokenCryptoManager {
   private readonly keysDir?: string | undefined;
 
   constructor(
-    issuer = process.env.OIDC_ISSUER ?? 'https://auth.soauth.internal',
+    issuer = resolveDefaultIssuer(),
     alg: SupportedSigningAlg = (process.env.SIGNING_ALG as SupportedSigningAlg) ?? 'RS256',
     kid = process.env.KEY_ID ?? 'soauth-key-2026-10',
-    keysDir = process.env.KEYS_DIR,
+    keysDir = process.env.KEYS_DIR ?? (process.env.VERCEL ? '/tmp/soauth-keys' : undefined),
   ) {
     this.issuer = issuer;
     this.alg = alg;
@@ -61,11 +75,13 @@ export class TokenCryptoManager {
   public async initializeKeys(): Promise<void> {
     if (this.activeKey) return;
 
-    // 1. Check environment variable PEM
+    // 1. Check environment variable PEM (supports escaped \n in serverless env vars)
     if (process.env.PRIVATE_KEY_PEM && process.env.PUBLIC_KEY_PEM) {
       try {
-        const privateKey = await importPKCS8(process.env.PRIVATE_KEY_PEM, this.alg);
-        const publicKey = await importSPKI(process.env.PUBLIC_KEY_PEM, this.alg);
+        const normalizedPrivPem = process.env.PRIVATE_KEY_PEM.replace(/\\n/g, '\n');
+        const normalizedPubPem = process.env.PUBLIC_KEY_PEM.replace(/\\n/g, '\n');
+        const privateKey = await importPKCS8(normalizedPrivPem, this.alg);
+        const publicKey = await importSPKI(normalizedPubPem, this.alg);
         const exportedPublicJwk = await exportJWK(publicKey);
         this.activeKey = {
           kid: this.kid,

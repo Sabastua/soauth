@@ -1,4 +1,10 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import {
+  BACKEND_URL,
+  fetchCurrentSession,
+  submitPortalLogout,
+  type SessionUserInfo,
+} from '../services/api.js';
 import type { OAuthTransactionContext } from '../types/oauth.types.js';
 
 interface LoginViewProps {
@@ -6,6 +12,7 @@ interface LoginViewProps {
   error?: string;
   requireMfa?: boolean;
   onCredentialsCaptured: (email: string, password: string, mfaCode?: string) => void;
+  onSsoContinue?: (email: string) => void;
   onNavigateToSignUp?: () => void;
   onNavigateToForgotPassword?: () => void;
   onNavigateToPortal?: () => void;
@@ -16,6 +23,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
   error,
   requireMfa = false,
   onCredentialsCaptured,
+  onSsoContinue,
   onNavigateToSignUp,
   onNavigateToForgotPassword,
   onNavigateToPortal,
@@ -23,6 +31,20 @@ export const LoginView: React.FC<LoginViewProps> = ({
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [mfaCode, setMfaCode] = useState('');
+  const [ssoUser, setSsoUser] = useState<SessionUserInfo | null>(null);
+  const [useDifferentAccount, setUseDifferentAccount] = useState(false);
+
+  useEffect(() => {
+    fetchCurrentSession()
+      .then((res) => {
+        if (res.authenticated && res.user) {
+          setSsoUser(res.user);
+        }
+      })
+      .catch(() => {
+        // Ignore session check errors
+      });
+  }, []);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -30,7 +52,6 @@ export const LoginView: React.FC<LoginViewProps> = ({
   };
 
   const handleSocialLogin = (provider: 'google' | 'github') => {
-    const backendUrl = import.meta.env?.VITE_BACKEND_URL ?? 'http://localhost:4000';
     const params = new URLSearchParams({
       client_id: context.clientId,
       redirect_uri: context.redirectUri,
@@ -40,7 +61,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
       code_challenge_method: context.codeChallengeMethod,
       ...(context.nonce ? { nonce: context.nonce } : {}),
     });
-    window.location.assign(`${backendUrl}/api/v1/auth/social/${provider}?${params.toString()}`);
+    window.location.assign(`${BACKEND_URL}/api/v1/auth/social/${provider}?${params.toString()}`);
   };
 
   return (
@@ -56,6 +77,78 @@ export const LoginView: React.FC<LoginViewProps> = ({
         </div>
       )}
 
+      {ssoUser && !useDifferentAccount && !requireMfa && onSsoContinue ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.85rem',
+              padding: '0.9rem 1rem',
+              borderRadius: '8px',
+              border: '1px solid #bfdbfe',
+              background: '#eff6ff',
+            }}
+          >
+            <div
+              style={{
+                width: '40px',
+                height: '40px',
+                borderRadius: '50%',
+                background: 'var(--primary)',
+                color: '#ffffff',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontWeight: 700,
+                fontSize: '1.05rem',
+                flexShrink: 0,
+              }}
+            >
+              {ssoUser.email.charAt(0).toUpperCase()}
+            </div>
+            <div style={{ overflow: 'hidden' }}>
+              <div style={{ fontWeight: 600, fontSize: '0.95rem', color: '#0f172a', textOverflow: 'ellipsis', overflow: 'hidden' }}>
+                {ssoUser.email}
+              </div>
+              <div style={{ fontSize: '0.75rem', color: '#1d4ed8' }}>
+                Signed in • Active SSO Session
+              </div>
+            </div>
+          </div>
+
+          <button type="button" onClick={() => onSsoContinue(ssoUser.email)}>
+            Continue as {ssoUser.email}
+          </button>
+
+          <button
+            type="button"
+            style={{ background: '#f1f5f9', color: '#334155', border: '1px solid #cbd5e1' }}
+            onClick={async () => {
+              await submitPortalLogout();
+              setSsoUser(null);
+              setUseDifferentAccount(true);
+            }}
+          >
+            Use another account
+          </button>
+
+          {onNavigateToPortal && (
+            <p style={{ fontSize: '0.8rem', textAlign: 'center', marginTop: '0.5rem', borderTop: '1px solid #f1f5f9', paddingTop: '0.75rem' }}>
+              <a
+                href="#portal"
+                onClick={(e) => {
+                  e.preventDefault();
+                  onNavigateToPortal();
+                }}
+                style={{ color: '#64748b', textDecoration: 'none' }}
+              >
+                🛠️ Developer Portal & Security Settings
+              </a>
+            </p>
+          )}
+        </div>
+      ) : (
       <form onSubmit={handleSubmit}>
         <label htmlFor="email">Email Address</label>
         <input
@@ -199,6 +292,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
           </p>
         )}
       </form>
+      )}
     </main>
   );
 };

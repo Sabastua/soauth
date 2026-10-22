@@ -17,8 +17,13 @@ import { initializeDevMemoryStore } from './database/dev-store.js';
 import { OAuthProtocolError } from './types/oauth.types.js';
 
 export async function buildOAuthServer() {
-  // If running in development without live Postgres/Redis, enable in-memory dev store
-  if (process.env.NODE_ENV !== 'test' && process.env.USE_DEV_MEMORY !== 'false') {
+  // If running without live Postgres/Redis configured, enable in-memory store automatically
+  const hasExternalDb = Boolean(process.env.DATABASE_URL && process.env.REDIS_URL);
+  const shouldUseDevMemory =
+    process.env.NODE_ENV !== 'test' &&
+    (process.env.USE_DEV_MEMORY === 'true' || (!hasExternalDb && process.env.USE_DEV_MEMORY !== 'false'));
+
+  if (shouldUseDevMemory) {
     await initializeDevMemoryStore();
   }
 
@@ -31,7 +36,7 @@ export async function buildOAuthServer() {
   await app.register(formbody);
   await app.register(cookie);
   await app.register(cors, {
-    origin: process.env.FRONTEND_LOGIN_URL ?? 'http://localhost:3000',
+    origin: true,
     credentials: true,
   });
 

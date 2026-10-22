@@ -17,9 +17,18 @@ interface SocialTransactionState {
   nonce?: string;
 }
 
-export async function registerSocialAuthRoutes(app: FastifyInstance): Promise<void> {
-  const backendBaseUrl = process.env.ISSUER_URL ?? 'http://localhost:4000';
+function resolveBackendBaseUrl(requestHost?: string, forwardedProto?: string): string {
+  if (process.env.ISSUER_URL) return process.env.ISSUER_URL.replace(/\/$/, '');
+  if (process.env.OIDC_ISSUER) return process.env.OIDC_ISSUER.replace(/\/$/, '');
+  if (requestHost && !requestHost.startsWith('localhost:80')) {
+    const proto = forwardedProto ?? (requestHost.startsWith('localhost') || requestHost.startsWith('127.0.0.1') ? 'http' : 'https');
+    return `${proto}://${requestHost}`;
+  }
+  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
+  return 'http://localhost:4000';
+}
 
+export async function registerSocialAuthRoutes(app: FastifyInstance): Promise<void> {
   /**
    * GET /api/v1/auth/social/:provider
    * Initiates brokered OAuth flow for Google or GitHub.
@@ -50,6 +59,8 @@ export async function registerSocialAuthRoutes(app: FastifyInstance): Promise<vo
 
     await redis.set(`oauth:social:${socialState}`, JSON.stringify(socialContext), 'EX', 600);
 
+    const forwardedProto = (request.headers['x-forwarded-proto'] as string | undefined)?.split(',')[0];
+    const backendBaseUrl = resolveBackendBaseUrl(request.headers.host, forwardedProto);
     const callbackUrl = `${backendBaseUrl}/api/v1/auth/social/${provider}/callback`;
 
     if (provider === 'google') {
@@ -152,6 +163,8 @@ export async function registerSocialAuthRoutes(app: FastifyInstance): Promise<vo
     const socialContext: SocialTransactionState = JSON.parse(rawContext);
     let userEmail: string;
 
+    const forwardedProto = (request.headers['x-forwarded-proto'] as string | undefined)?.split(',')[0];
+    const backendBaseUrl = resolveBackendBaseUrl(request.headers.host, forwardedProto);
     const callbackUrl = `${backendBaseUrl}/api/v1/auth/social/${provider}/callback`;
 
     // 1. Resolve user email from real provider or simulation
@@ -266,7 +279,15 @@ export async function registerSocialAuthRoutes(app: FastifyInstance): Promise<vo
       authTimeSeconds: Math.floor(Date.now() / 1000),
     });
 
-    // 5. Redirect back to relying party callback with code & original state
+    // 5. Set SSO session cookie and redirect back to relying party callback
+    reply.setCookie('soauth_sso_token', rawSessionToken, {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production' || Boolean(process.env.VERCEL),
+      path: '/',
+      maxAge: 8 * 60 * 60,
+    });
+
     const returnUrl = new URL(socialContext.redirectUri);
     returnUrl.searchParams.set('code', authCode);
     returnUrl.searchParams.set('state', socialContext.state);

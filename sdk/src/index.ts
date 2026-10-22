@@ -273,3 +273,311 @@ export function buildLogoutUrl(options: LogoutOptions): string {
   }
   return url.toString();
 }
+
+export interface SoAuthClientConfig {
+  issuerUrl: string;
+  clientId: string;
+  clientSecret?: string;
+  redirectUri?: string;
+  scope?: string;
+  storageKeyPrefix?: string;
+}
+
+export interface SoAuthState {
+  isAuthenticated: boolean;
+  isLoading: boolean;
+  user: UserInfo | null;
+  accessToken: string | null;
+  idToken: string | null;
+  error: string | null;
+}
+
+/**
+ * Clerk-style Stateful Client Manager for SPAs, React, Vue, and Vanilla JS.
+ * Automatically handles PKCE generation, redirect callback `?code=...`, token refresh, and session persistence.
+ */
+export class SoAuthClient {
+  private readonly config: Required<Pick<SoAuthClientConfig, 'issuerUrl' | 'clientId' | 'scope' | 'storageKeyPrefix'>> &
+    Omit<SoAuthClientConfig, 'issuerUrl' | 'clientId' | 'scope' | 'storageKeyPrefix'>;
+  private state: SoAuthState = {
+    isAuthenticated: false,
+    isLoading: true,
+    user: null,
+    accessToken: null,
+    idToken: null,
+    error: null,
+  };
+  private listeners = new Set<(state: SoAuthState) => void>();
+
+  constructor(config: SoAuthClientConfig) {
+    this.config = {
+      ...config,
+      issuerUrl: config.issuerUrl.replace(/\/$/, ''),
+      scope: config.scope ?? 'openid profile email offline_access',
+      storageKeyPrefix: config.storageKeyPrefix ?? `soauth_${config.clientId}`,
+    };
+  }
+
+  public getState(): SoAuthState {
+    return this.state;
+  }
+
+  public subscribe(listener: (state: SoAuthState) => void): () => void {
+    this.listeners.add(listener);
+    listener(this.state);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
+  private setState(partial: Partial<SoAuthState>): void {
+    this.state = { ...this.state, ...partial };
+    for (const listener of this.listeners) {
+      listener(this.state);
+    }
+  }
+
+  private getRedirectUri(): string {
+    if (this.config.redirectUri) return this.config.redirectUri;
+    if (typeof window !== 'undefined') {
+      return window.location.origin + window.location.pathname;
+    }
+    throw new Error('redirectUri is required in non-browser environments');
+  }
+
+  /**
+   * Initializes client state: checks URL for OAuth callback `?code=...` or restores cached session.
+   */
+  public async initialize(): Promise<SoAuthState> {
+    if (typeof window === 'undefined') {
+      this.setState({ isLoading: false });
+      return this.state;
+    }
+
+    const prefix = this.config.storageKeyPrefix;
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get('code');
+    const returnedState = params.get('state');
+    const oauthError = params.get('error');
+
+    if (oauthError) {
+      const desc = params.get('error_description') ?? oauthError;
+      this.cleanUrlParams();
+      this.setState({ isLoading: false, isAuthenticated: false, error: desc });
+      return this.state;
+    }
+
+    if (code && returnedState) {
+      const expectedState = sessionStorage.getItem(`${prefix}_state`);
+      const verifier = sessionStorage.getItem(`${prefix}_verifier`);
+
+      if (verifier && (!expectedState || expectedState === returnedState)) {
+        try {
+          const tokens = await exchangeCodeForTokens({
+            issuerUrl: this.config.issuerUrl,
+            clientId: this.config.clientId,
+            ...(this.config.clientSecret ? { clientSecret: this.config.clientSecret } : {}),
+            redirectUri: this.getRedirectUri(),
+            code,
+            codeVerifier: verifier,
+          });
+
+          sessionStorage.removeItem(`${prefix}_state`);
+          sessionStorage.removeItem(`${prefix}_verifier`);
+          this.persistTokens(tokens);
+          this.cleanUrlParams();
+
+          const user = await fetchUserInfo(this.config.issuerUrl, tokens.access_token);
+          sessionStorage.setItem(`${prefix}_user`, JSON.stringify(user));
+
+          this.setState({
+            isAuthenticated: true,
+            isLoading: false,
+            user,
+            accessToken: tokens.access_token,
+            idToken: tokens.id_token ?? null,
+            error: null,
+          });
+          return this.state;
+        } catch (err) {
+          this.cleanUrlParams();
+          this.setState({
+            isAuthenticated: false,
+            isLoading: false,
+            error: err instanceof Error ? err.message : 'Token exchange failed',
+          });
+          return this.state;
+        }
+      }
+    }
+
+    // Restore from sessionStorage if valid
+    const cachedAccess = sessionStorage.getItem(`${prefix}_access_token`);
+    const cachedId = sessionStorage.getItem(`${prefix}_id_token`);
+    const cachedUser = sessionStorage.getItem(`${prefix}_user`);
+
+    if (cachedAccess) {
+      try {
+        const user = cachedUser
+          ? (JSON.parse(cachedUser) as UserInfo)
+          : await fetchUserInfo(this.config.issuerUrl, cachedAccess);
+        sessionStorage.setItem(`${prefix}_user`, JSON.stringify(user));
+        this.setState({
+          isAuthenticated: true,
+          isLoading: false,
+          user,
+          accessToken: cachedAccess,
+          idToken: cachedId,
+          error: null,
+        });
+        return this.state;
+      } catch {
+        // Attempt token refresh if refresh_token exists
+        const cachedRefresh = sessionStorage.getItem(`${prefix}_refresh_token`);
+        if (cachedRefresh) {
+          try {
+            const refreshed = await refreshAccessToken({
+              issuerUrl: this.config.issuerUrl,
+              clientId: this.config.clientId,
+              ...(this.config.clientSecret ? { clientSecret: this.config.clientSecret } : {}),
+              refreshToken: cachedRefresh,
+            });
+            this.persistTokens(refreshed);
+            const user = await fetchUserInfo(this.config.issuerUrl, refreshed.access_token);
+            sessionStorage.setItem(`${prefix}_user`, JSON.stringify(user));
+            this.setState({
+              isAuthenticated: true,
+              isLoading: false,
+              user,
+              accessToken: refreshed.access_token,
+              idToken: refreshed.id_token ?? cachedId,
+              error: null,
+            });
+            return this.state;
+          } catch {
+            this.clearStorage();
+          }
+        } else {
+          this.clearStorage();
+        }
+      }
+    }
+
+    this.setState({ isAuthenticated: false, isLoading: false, user: null, accessToken: null });
+    return this.state;
+  }
+
+  /**
+   * Starts the PKCE redirect flow to the hosted soauth login UI.
+   */
+  public async loginWithRedirect(customScope?: string): Promise<void> {
+    const prefix = this.config.storageKeyPrefix;
+    const { url, codeVerifier, state } = await createAuthorizationUrl({
+      issuerUrl: this.config.issuerUrl,
+      clientId: this.config.clientId,
+      redirectUri: this.getRedirectUri(),
+      scope: customScope ?? this.config.scope,
+    });
+
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem(`${prefix}_verifier`, codeVerifier);
+      sessionStorage.setItem(`${prefix}_state`, state);
+      window.location.assign(url);
+    }
+  }
+
+  /**
+   * Returns a valid access token, refreshing automatically if needed.
+   */
+  public async getAccessToken(): Promise<string | null> {
+    if (this.state.accessToken) return this.state.accessToken;
+    const prefix = this.config.storageKeyPrefix;
+    const refresh = typeof window !== 'undefined' ? sessionStorage.getItem(`${prefix}_refresh_token`) : null;
+    if (!refresh) return null;
+
+    const refreshed = await refreshAccessToken({
+      issuerUrl: this.config.issuerUrl,
+      clientId: this.config.clientId,
+      ...(this.config.clientSecret ? { clientSecret: this.config.clientSecret } : {}),
+      refreshToken: refresh,
+    });
+    this.persistTokens(refreshed);
+    this.setState({ accessToken: refreshed.access_token });
+    return refreshed.access_token;
+  }
+
+  /**
+   * Revokes tokens, clears local storage, and triggers RP-Initiated Logout.
+   */
+  public async logout(postLogoutRedirectUri?: string): Promise<void> {
+    const idTokenHint = this.state.idToken ?? undefined;
+    const accessToken = this.state.accessToken;
+    this.clearStorage();
+    this.setState({
+      isAuthenticated: false,
+      isLoading: false,
+      user: null,
+      accessToken: null,
+      idToken: null,
+    });
+
+    if (accessToken) {
+      try {
+        await revokeToken({
+          issuerUrl: this.config.issuerUrl,
+          clientId: this.config.clientId,
+          ...(this.config.clientSecret ? { clientSecret: this.config.clientSecret } : {}),
+          token: accessToken,
+        });
+      } catch {
+        // Ignore network errors during logout cleanup
+      }
+    }
+
+    if (typeof window !== 'undefined') {
+      const logoutUrl = buildLogoutUrl({
+        issuerUrl: this.config.issuerUrl,
+        ...(idTokenHint ? { idTokenHint } : {}),
+        ...(postLogoutRedirectUri ? { postLogoutRedirectUri } : {}),
+      });
+      window.location.assign(logoutUrl);
+    }
+  }
+
+  private persistTokens(tokens: OAuthTokens): void {
+    if (typeof window === 'undefined') return;
+    const prefix = this.config.storageKeyPrefix;
+    sessionStorage.setItem(`${prefix}_access_token`, tokens.access_token);
+    if (tokens.refresh_token) {
+      sessionStorage.setItem(`${prefix}_refresh_token`, tokens.refresh_token);
+    }
+    if (tokens.id_token) {
+      sessionStorage.setItem(`${prefix}_id_token`, tokens.id_token);
+    }
+  }
+
+  private clearStorage(): void {
+    if (typeof window === 'undefined') return;
+    const prefix = this.config.storageKeyPrefix;
+    sessionStorage.removeItem(`${prefix}_access_token`);
+    sessionStorage.removeItem(`${prefix}_refresh_token`);
+    sessionStorage.removeItem(`${prefix}_id_token`);
+    sessionStorage.removeItem(`${prefix}_user`);
+    sessionStorage.removeItem(`${prefix}_verifier`);
+    sessionStorage.removeItem(`${prefix}_state`);
+  }
+
+  private cleanUrlParams(): void {
+    if (typeof window === 'undefined') return;
+    const url = new URL(window.location.href);
+    url.searchParams.delete('code');
+    url.searchParams.delete('state');
+    url.searchParams.delete('error');
+    url.searchParams.delete('error_description');
+    window.history.replaceState({}, document.title, url.pathname + url.search + url.hash);
+  }
+}
+
+export { createSoAuthReact, type ReactLike, type SoAuthContextValue } from './react.js';
+
+

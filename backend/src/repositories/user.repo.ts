@@ -47,6 +47,30 @@ export class UserRepository {
       .execute();
   }
 
+  public async enableMfa(userId: string, secretEncrypted: string): Promise<void> {
+    await db
+      .updateTable('users')
+      .set({
+        is_mfa_enabled: true,
+        mfa_secret_encrypted: secretEncrypted,
+        updated_at: new Date(),
+      })
+      .where('id', '=', userId)
+      .execute();
+  }
+
+  public async disableMfa(userId: string): Promise<void> {
+    await db
+      .updateTable('users')
+      .set({
+        is_mfa_enabled: false,
+        mfa_secret_encrypted: null,
+        updated_at: new Date(),
+      })
+      .where('id', '=', userId)
+      .execute();
+  }
+
   public async createPasswordResetToken(
     tokenData: NewPasswordResetTokenRow,
   ): Promise<PasswordResetTokenRow> {

@@ -9,6 +9,7 @@ import {
   submitLoginAndConsent,
   submitResetPassword,
   submitSignUp,
+  submitSsoConsent,
 } from './services/api.js';
 import type { AuthFlowStep, OAuthTransactionContext } from './types/oauth.types.js';
 
@@ -98,6 +99,13 @@ export const App: React.FC = () => {
             credentials: { email, password, ...(mfaCode ? { mfaCode } : {}) },
           });
         }}
+        onSsoContinue={(email) => {
+          setFlowState({
+            step: 'CONSENT',
+            context: flowState.context,
+            credentials: { email, useSsoCookie: true },
+          });
+        }}
         onNavigateToSignUp={() => {
           setFlowState({ step: 'SIGNUP', context: flowState.context });
         }}
@@ -157,15 +165,20 @@ export const App: React.FC = () => {
         userEmail={flowState.credentials.email}
         onDecision={async (consentGranted) => {
           try {
-            const { redirect_to } = await submitLoginAndConsent({
-              context: flowState.context,
-              email: flowState.credentials.email,
-              password: flowState.credentials.password,
-              consentGranted,
-              ...(flowState.credentials.mfaCode
-                ? { mfaCode: flowState.credentials.mfaCode }
-                : {}),
-            });
+            const { redirect_to } = flowState.credentials.useSsoCookie
+              ? await submitSsoConsent({
+                  context: flowState.context,
+                  consentGranted,
+                })
+              : await submitLoginAndConsent({
+                  context: flowState.context,
+                  email: flowState.credentials.email,
+                  password: flowState.credentials.password ?? '',
+                  consentGranted,
+                  ...(flowState.credentials.mfaCode
+                    ? { mfaCode: flowState.credentials.mfaCode }
+                    : {}),
+                });
             setFlowState({ step: 'REDIRECTING', redirectTo: redirect_to });
             window.location.assign(redirect_to);
           } catch (err) {

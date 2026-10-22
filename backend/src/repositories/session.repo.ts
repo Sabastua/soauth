@@ -25,6 +25,29 @@ export class SessionAndTokenRepository {
       .executeTakeFirst();
   }
 
+  public async findActiveSessionByTokenHash(
+    sessionTokenHash: string,
+  ): Promise<ActiveSessionRow | undefined> {
+    return db
+      .selectFrom('active_sessions')
+      .selectAll()
+      .where('session_token_hash', '=', sessionTokenHash)
+      .where('is_revoked', '=', false)
+      .where('expires_at', '>', new Date())
+      .executeTakeFirst();
+  }
+
+  public async listActiveSessionsForUser(userId: string): Promise<ActiveSessionRow[]> {
+    return db
+      .selectFrom('active_sessions')
+      .selectAll()
+      .where('user_id', '=', userId)
+      .where('is_revoked', '=', false)
+      .where('expires_at', '>', new Date())
+      .orderBy('created_at', 'desc')
+      .execute();
+  }
+
   public async createRefreshToken(token: NewRefreshTokenRow): Promise<RefreshTokenRow> {
     return db
       .insertInto('refresh_tokens')
