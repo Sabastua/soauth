@@ -112,7 +112,6 @@ export const LoginView: React.FC<LoginViewProps> = ({
 
         {error && (
           <div role="alert" className="oauth-error">
-            <span>⚠️</span>
             <span>{error}</span>
           </div>
         )}
@@ -377,7 +376,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
         )}
 
         <footer className="trust-footer">
-          <span className="trust-badge">🔒 Secured by soauth</span>
+          <span className="trust-badge">Secured by soauth</span>
           {onNavigateToPortal && (
             <a
               href="#portal"

@@ -66,14 +66,13 @@ export const ForgotPasswordView: React.FC<ForgotPasswordViewProps> = ({
     <div className="auth-stage">
       <main className="oauth-card">
         <header>
-          <div className="brand-monogram">🔑</div>
+          <div className="brand-monogram">{context.appName.charAt(0).toUpperCase() || 'S'}</div>
           <h1>{step === 'REQUEST' ? 'Reset your password' : 'Set a new password'}</h1>
           <p>Recover access to {context.appName}</p>
         </header>
 
         {error && (
           <div role="alert" className="oauth-error">
-            <span>⚠️</span>
             <span>{error}</span>
           </div>
         )}
@@ -96,7 +95,7 @@ export const ForgotPasswordView: React.FC<ForgotPasswordViewProps> = ({
             </div>
 
             <button type="submit" disabled={loading} style={{ width: '100%' }}>
-              {loading ? 'Sending...' : 'Send Reset Token →'}
+              {loading ? 'Sending...' : 'Send Reset Token'}
             </button>
 
             <p style={{ fontSize: '0.84rem', textAlign: 'center', marginTop: '0.25rem' }}>
@@ -108,7 +107,7 @@ export const ForgotPasswordView: React.FC<ForgotPasswordViewProps> = ({
                 }}
                 style={{ color: 'var(--primary)', fontWeight: 700, textDecoration: 'none' }}
               >
-                ← Back to Sign in
+                Back to Sign in
               </a>
             </p>
           </form>
@@ -152,13 +151,13 @@ export const ForgotPasswordView: React.FC<ForgotPasswordViewProps> = ({
             </div>
 
             <button type="submit" disabled={loading} style={{ width: '100%' }}>
-              {loading ? 'Updating Password...' : 'Save New Password →'}
+              {loading ? 'Updating Password...' : 'Save New Password'}
             </button>
           </form>
         )}
 
         <footer className="trust-footer">
-          <span className="trust-badge">🔒 Revokes prior sessions on reset</span>
+          <span className="trust-badge">Revokes prior sessions on reset</span>
         </footer>
       </main>
     </div>

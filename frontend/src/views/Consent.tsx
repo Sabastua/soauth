@@ -184,7 +184,7 @@ export const ConsentView: React.FC<ConsentViewProps> = ({
         </div>
 
         <footer className="trust-footer">
-          <span className="trust-badge">🔒 OAuth 2.1 + PKCE S256 Verified</span>
+          <span className="trust-badge">OAuth 2.1 + PKCE S256 Verified</span>
         </footer>
       </main>
     </div>

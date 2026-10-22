@@ -48,7 +48,6 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
 
         {error && (
           <div role="alert" className="oauth-error">
-            <span>⚠️</span>
             <span>{error}</span>
           </div>
         )}
@@ -96,7 +95,7 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
           </div>
 
           <button type="submit" disabled={loading} style={{ width: '100%', marginTop: '0.25rem' }}>
-            {loading ? 'Creating Account...' : 'Create Account & Continue →'}
+            {loading ? 'Creating Account...' : 'Create Account & Continue'}
           </button>
 
           <p style={{ fontSize: '0.84rem', textAlign: 'center', color: '#64748b', marginTop: '0.25rem' }}>
@@ -115,7 +114,7 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
         </form>
 
         <footer className="trust-footer">
-          <span className="trust-badge">🔒 Argon2id Password Hashing</span>
+          <span className="trust-badge">Argon2id Password Hashing</span>
         </footer>
       </main>
     </div>

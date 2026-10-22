@@ -479,7 +479,6 @@ export const DevPortal: React.FC<DevPortalProps> = ({ onBackToLogin }) => {
 
             {error && (
               <div className="oauth-error" style={{ marginBottom: '1rem' }}>
-                <span>⚠️</span>
                 <span>{error}</span>
               </div>
             )}
@@ -522,7 +521,7 @@ export const DevPortal: React.FC<DevPortalProps> = ({ onBackToLogin }) => {
                 />
               </div>
               <button type="submit" disabled={loginLoading} style={{ width: '100%', marginTop: '0.25rem' }}>
-                {loginLoading ? 'Signing in...' : 'Open Cloud Dashboard →'}
+                {loginLoading ? 'Signing in...' : 'Open Cloud Dashboard'}
               </button>
             </form>
 
@@ -540,7 +539,7 @@ export const DevPortal: React.FC<DevPortalProps> = ({ onBackToLogin }) => {
                   setLoginPassword('SoAuthAdminPassword!2026');
                 }}
               >
-                ⚡ Fill Demo Admin
+                Fill Demo Admin
               </button>
               <button
                 type="button"
@@ -548,7 +547,7 @@ export const DevPortal: React.FC<DevPortalProps> = ({ onBackToLogin }) => {
                 style={{ flex: 1, fontSize: '0.8rem' }}
                 onClick={() => launchHostedLoginDemo()}
               >
-                🚀 Preview Hosted Login
+                Preview Hosted Login
               </button>
             </div>
           </div>
@@ -570,7 +569,7 @@ export const DevPortal: React.FC<DevPortalProps> = ({ onBackToLogin }) => {
                 marginBottom: '1.25rem',
               }}
             >
-              ✦ Production OAuth 2.1 &amp; OIDC SaaS Platform
+              Production OAuth 2.1 &amp; OIDC SaaS Platform
             </span>
             <h2
               style={{
@@ -768,7 +767,6 @@ if (!state.isAuthenticated) {
               className={`saas-nav-btn ${activeTab === 'apps' ? 'active' : ''}`}
               onClick={() => setActiveTab('apps')}
             >
-              <span>📦</span>
               <span>Applications &amp; SDK ({clients.length})</span>
             </button>
             <button
@@ -776,7 +774,6 @@ if (!state.isAuthenticated) {
               className={`saas-nav-btn ${activeTab === 'branding' ? 'active' : ''}`}
               onClick={() => setActiveTab('branding')}
             >
-              <span>🎨</span>
               <span>Branding &amp; Webhooks</span>
             </button>
             <button
@@ -787,7 +784,6 @@ if (!state.isAuthenticated) {
                 if (activeClient) void loadAppUsers(activeClient.id);
               }}
             >
-              <span>👥</span>
               <span>Users &amp; RBAC Roles</span>
             </button>
             <button
@@ -798,7 +794,6 @@ if (!state.isAuthenticated) {
                 void loadSecurityAndSaasOverview();
               }}
             >
-              <span>🛡️</span>
               <span>MAU, Audit &amp; 2FA</span>
             </button>
           </nav>
@@ -816,7 +811,7 @@ if (!state.isAuthenticated) {
               style={{ width: '100%', padding: '0.5rem 0.75rem', fontSize: '0.78rem' }}
               onClick={() => launchHostedLoginDemo(activeClient)}
             >
-              🚀 Try Hosted Login →
+              Try Hosted Login
             </button>
           </div>
         </div>
@@ -879,7 +874,7 @@ if (!state.isAuthenticated) {
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
             <span className={currentUser.is_mfa_enabled ? 'pill pill-green' : 'pill pill-slate'}>
-              {currentUser.is_mfa_enabled ? '🔒 2FA Protected' : '2FA Off'}
+              {currentUser.is_mfa_enabled ? '2FA Protected' : '2FA Off'}
             </span>
             <span className="pill pill-indigo">Role: {currentUser.role ?? 'member'}</span>
             {onBackToLogin && (
@@ -889,7 +884,7 @@ if (!state.isAuthenticated) {
                 style={{ padding: '0.5rem 0.85rem', fontSize: '0.8rem' }}
                 onClick={onBackToLogin}
               >
-                ← Return to OAuth Flow
+                Return to OAuth Flow
               </button>
             )}
             <button
@@ -910,7 +905,6 @@ if (!state.isAuthenticated) {
           {successMsg && <div className="oauth-success">{successMsg}</div>}
           {error && (
             <div className="oauth-error">
-              <span>⚠️</span>
               <span>{error}</span>
             </div>
           )}
@@ -929,7 +923,7 @@ if (!state.isAuthenticated) {
                   }}
                 >
                   <h3 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: '0.35rem' }}>
-                    🎉 Application Created: {createdSecretInfo.client_name}
+                    Application Created: {createdSecretInfo.client_name}
                   </h3>
                   <p style={{ fontSize: '0.84rem', marginBottom: '0.75rem' }}>
                     Save your credentials now. The client secret is hashed with Argon2id and never shown again.
@@ -1209,7 +1203,7 @@ if (!state.isAuthenticated) {
                       onClick={() => copyToClipboard(currentSnippet, 'SDK Snippet')}
                       style={{ fontSize: '0.78rem', padding: '0.4rem 0.75rem' }}
                     >
-                      📋 Copy Snippet
+                      Copy Snippet
                     </button>
                   </div>
                 </div>
@@ -1326,7 +1320,7 @@ if (!state.isAuthenticated) {
                     </button>
                     {webhookUrl && (
                       <button type="button" className="btn-secondary" onClick={handleTestWebhook}>
-                        ⚡ Send Test Webhook
+                        Send Test Webhook
                       </button>
                     )}
                   </div>
@@ -1382,11 +1376,11 @@ if (!state.isAuthenticated) {
                     type="button"
                     style={{ background: brandPrimaryColor || '#4f46e5', width: '100%', pointerEvents: 'none' }}
                   >
-                    Continue as {currentUser.email.split('@')[0]} →
+                    Continue as {currentUser.email.split('@')[0]}
                   </button>
 
                   <footer className="trust-footer" style={{ paddingTop: '0.65rem' }}>
-                    <span className="trust-badge">🔒 Secured by soauth</span>
+                    <span className="trust-badge">Secured by soauth</span>
                     {(brandTermsUrl || brandPrivacyUrl) && (
                       <span style={{ fontSize: '0.7rem' }}>Terms · Privacy</span>
                     )}
