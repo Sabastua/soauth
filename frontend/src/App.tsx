@@ -71,18 +71,16 @@ export const App: React.FC = () => {
 
   if (flowState.step === 'DEV_PORTAL') {
     return (
-      <main style={{ width: '100%', maxWidth: '900px', padding: '1rem' }}>
-        <DevPortal
-          onBackToLogin={
-            initialContext
-              ? () => {
-                  window.location.hash = '';
-                  setFlowState({ step: 'LOGIN', context: initialContext });
-                }
-              : undefined
-          }
-        />
-      </main>
+      <DevPortal
+        onBackToLogin={
+          initialContext
+            ? () => {
+                window.location.hash = '';
+                setFlowState({ step: 'LOGIN', context: initialContext });
+              }
+            : undefined
+        }
+      />
     );
   }
 
@@ -197,8 +195,16 @@ export const App: React.FC = () => {
   }
 
   return (
-    <main className="oauth-card">
-      <p>Redirecting back to application callback...</p>
-    </main>
+    <div className="auth-stage">
+      <main className="oauth-card" style={{ textAlign: 'center' }}>
+        <div className="brand-monogram" style={{ margin: '0 auto 0.5rem' }}>
+          ✓
+        </div>
+        <h2 style={{ fontSize: '1.15rem', fontWeight: 700 }}>Redirecting to application...</h2>
+        <p style={{ color: '#64748b', fontSize: '0.88rem' }}>
+          Completing OAuth 2.1 PKCE callback handshake.
+        </p>
+      </main>
+    </div>
   );
 };

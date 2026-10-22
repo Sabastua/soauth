@@ -36,69 +36,88 @@ export const SignUpView: React.FC<SignUpViewProps> = ({
   };
 
   return (
-    <main className="oauth-card">
-      <header>
-        <h1>Create your soauth Account</h1>
-        <p>Register to continue to {context.appName}</p>
-      </header>
+    <div className="auth-stage">
+      <main className="oauth-card">
+        <header>
+          <div className="brand-monogram">
+            {context.appName.charAt(0).toUpperCase()}
+          </div>
+          <h1>Create your account</h1>
+          <p>Sign up once to access {context.appName}</p>
+        </header>
 
-      {error && (
-        <div role="alert" className="oauth-error">
-          {error}
-        </div>
-      )}
+        {error && (
+          <div role="alert" className="oauth-error">
+            <span>⚠️</span>
+            <span>{error}</span>
+          </div>
+        )}
 
-      <form onSubmit={handleSubmit}>
-        <label htmlFor="signup-email">Email Address</label>
-        <input
-          id="signup-email"
-          type="email"
-          required
-          autoComplete="username"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-        />
+        <form onSubmit={handleSubmit}>
+          <div>
+            <label htmlFor="signup-email">Work or Personal Email</label>
+            <input
+              id="signup-email"
+              type="email"
+              required
+              placeholder="you@example.com"
+              autoComplete="username"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </div>
 
-        <label htmlFor="signup-password">Password (min 8 characters)</label>
-        <input
-          id="signup-password"
-          type="password"
-          required
-          minLength={8}
-          autoComplete="new-password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-        />
+          <div>
+            <label htmlFor="signup-password">Password (minimum 8 characters)</label>
+            <input
+              id="signup-password"
+              type="password"
+              required
+              minLength={8}
+              placeholder="Create a strong password"
+              autoComplete="new-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </div>
 
-        <label htmlFor="confirm-password">Confirm Password</label>
-        <input
-          id="confirm-password"
-          type="password"
-          required
-          minLength={8}
-          autoComplete="new-password"
-          value={confirmPassword}
-          onChange={(e) => setConfirmPassword(e.target.value)}
-        />
+          <div>
+            <label htmlFor="confirm-password">Confirm Password</label>
+            <input
+              id="confirm-password"
+              type="password"
+              required
+              minLength={8}
+              placeholder="Repeat password"
+              autoComplete="new-password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+            />
+          </div>
 
-        <button type="submit" disabled={loading}>
-          {loading ? 'Creating Account...' : 'Sign Up & Continue'}
-        </button>
+          <button type="submit" disabled={loading} style={{ width: '100%', marginTop: '0.25rem' }}>
+            {loading ? 'Creating Account...' : 'Create Account & Continue →'}
+          </button>
 
-        <p style={{ fontSize: '0.875rem', textAlign: 'center', marginTop: '0.5rem' }}>
-          Already have an account?{' '}
-          <a
-            href="#login"
-            onClick={(e) => {
-              e.preventDefault();
-              onNavigateToLogin();
-            }}
-            style={{ color: 'var(--primary)', fontWeight: 500, textDecoration: 'none' }}
-          >
-            Sign in
-          </a>
-        </p>
-      </form>
-    </main>
+          <p style={{ fontSize: '0.84rem', textAlign: 'center', color: '#64748b', marginTop: '0.25rem' }}>
+            Already have an account?{' '}
+            <a
+              href="#login"
+              onClick={(e) => {
+                e.preventDefault();
+                onNavigateToLogin();
+              }}
+              style={{ color: 'var(--primary)', fontWeight: 700, textDecoration: 'none' }}
+            >
+              Sign in
+            </a>
+          </p>
+        </form>
+
+        <footer className="trust-footer">
+          <span className="trust-badge">🔒 Argon2id Password Hashing</span>
+        </footer>
+      </main>
+    </div>
   );
 };
