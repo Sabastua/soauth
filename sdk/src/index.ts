@@ -57,6 +57,8 @@ export interface UserInfo {
   sub: string;
   email?: string;
   email_verified?: boolean;
+  role?: string;
+  roles?: string[];
   name?: string;
   updated_at?: number;
   [key: string]: unknown;
@@ -504,6 +506,17 @@ export class SoAuthClient {
     this.persistTokens(refreshed);
     this.setState({ accessToken: refreshed.access_token });
     return refreshed.access_token;
+  }
+
+  /**
+   * Checks whether the authenticated user has a specific RBAC role.
+   */
+  public hasRole(expectedRole: string): boolean {
+    const user = this.state.user;
+    if (!user) return false;
+    if (user.role === expectedRole) return true;
+    if (Array.isArray(user.roles) && user.roles.includes(expectedRole)) return true;
+    return false;
   }
 
   /**

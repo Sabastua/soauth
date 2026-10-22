@@ -25,6 +25,14 @@ export class UserRepository {
       .executeTakeFirst();
   }
 
+  public async listAll(): Promise<UserRow[]> {
+    return db
+      .selectFrom('users')
+      .selectAll()
+      .orderBy('created_at', 'desc')
+      .execute();
+  }
+
   public async create(user: NewUserRow): Promise<UserRow> {
     return db
       .insertInto('users')
@@ -41,6 +49,28 @@ export class UserRepository {
       .updateTable('users')
       .set({
         password_hash: newPasswordHash,
+        updated_at: new Date(),
+      })
+      .where('id', '=', userId)
+      .execute();
+  }
+
+  public async markEmailVerified(userId: string): Promise<void> {
+    await db
+      .updateTable('users')
+      .set({
+        email_verified: true,
+        updated_at: new Date(),
+      })
+      .where('id', '=', userId)
+      .execute();
+  }
+
+  public async updateRole(userId: string, role: string): Promise<void> {
+    await db
+      .updateTable('users')
+      .set({
+        role,
         updated_at: new Date(),
       })
       .where('id', '=', userId)

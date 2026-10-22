@@ -10,6 +10,7 @@ import { tokenCryptoManager } from '../core/tokens.js';
 import { clientRepository } from '../repositories/client.repo.js';
 import { sessionAndTokenRepository } from '../repositories/session.repo.js';
 import { userRepository } from '../repositories/user.repo.js';
+import { saasService } from './saas.service.js';
 import {
   OAuthProtocolError,
   type RedisAuthorizationCodeState,
@@ -71,6 +72,13 @@ export class TokenService {
         compromisedState.sessionId,
         'AUTH_CODE_REPLAY_DETECTED',
       );
+      saasService.record({
+        eventType: 'token.replay_detected',
+        actorUserId: compromisedState.userId,
+        clientId: compromisedState.clientId,
+        status: 'failure',
+        details: `Authorization code replay detected for session ${compromisedState.sessionId}. Entire token family revoked.`,
+      });
       throw new OAuthProtocolError(
         'invalid_grant',
         'Authorization code has already been used. All tokens associated with this authorization grant have been revoked.',
@@ -135,12 +143,15 @@ export class TokenService {
       );
     }
 
+    const userRole = user.role ?? 'member';
+
     // 1. Issue signed JWT Access Token
     const { token: accessToken, expiresIn } = await tokenCryptoManager.signAccessToken({
       userId: user.id,
       clientId: client.id,
       sessionId: session.id,
       scope: codeState.scope,
+      role: userRole,
     });
 
     // 2. Issue opaque Refresh Token (stored hashed in PostgreSQL)
@@ -167,10 +178,22 @@ export class TokenService {
         sessionId: session.id,
         authTime: codeState.authTime,
         accessToken,
+        role: userRole,
         ...(codeState.nonce !== undefined ? { nonce: codeState.nonce } : {}),
-        ...(grantedScopes.includes('email') ? { email: user.email } : {}),
+        ...(grantedScopes.includes('email')
+          ? { email: user.email, emailVerified: user.email_verified ?? true }
+          : {}),
       });
     }
+
+    saasService.record({
+      eventType: 'token.issued',
+      actorUserId: user.id,
+      actorEmail: user.email,
+      clientId: client.id,
+      status: 'success',
+      details: `Issued OAuth/OIDC tokens for ${user.email} (scopes: ${codeState.scope})`,
+    });
 
     return {
       access_token: accessToken,
@@ -202,6 +225,13 @@ export class TokenService {
         storedToken.session_id,
         'REFRESH_TOKEN_REPLAY_DETECTED',
       );
+      saasService.record({
+        eventType: 'token.refresh_replay_detected',
+        actorUserId: storedToken.user_id,
+        clientId: storedToken.client_id,
+        status: 'failure',
+        details: `Refresh token replay detected for session ${storedToken.session_id}. Revoked session family.`,
+      });
       throw new OAuthProtocolError(
         'invalid_grant',
         'Refresh token reuse detected. Entire session family has been revoked.',
@@ -216,8 +246,11 @@ export class TokenService {
       throw new OAuthProtocolError('invalid_grant', 'Refresh token expired or client mismatch.', 400);
     }
 
-    const session = await sessionAndTokenRepository.findActiveSessionById(storedToken.session_id);
-    if (!session) {
+    const [session, user] = await Promise.all([
+      sessionAndTokenRepository.findActiveSessionById(storedToken.session_id),
+      userRepository.findById(storedToken.user_id),
+    ]);
+    if (!session || !user) {
       throw new OAuthProtocolError('invalid_grant', 'Session is revoked or expired.', 400);
     }
 
@@ -226,6 +259,7 @@ export class TokenService {
       clientId: client.id,
       sessionId: session.id,
       scope: storedToken.scope,
+      role: user.role ?? 'member',
     });
 
     const newRawRefreshToken = generateOpaqueToken(48);
@@ -258,6 +292,8 @@ export class TokenService {
     sub: string;
     email?: string;
     email_verified?: boolean;
+    role?: string;
+    roles?: string[];
     updated_at?: number;
   }> {
     let payload;
@@ -286,13 +322,19 @@ export class TokenService {
       throw new OAuthProtocolError('invalid_grant', 'User session is no longer active.', 401);
     }
 
+    const userRole = user.role ?? 'member';
+
     return {
       sub: user.id,
       ...(grantedScopes.includes('email')
-        ? { email: user.email, email_verified: true }
+        ? { email: user.email, email_verified: user.email_verified ?? true }
         : {}),
       ...(grantedScopes.includes('profile')
-        ? { updated_at: Math.floor(new Date(user.updated_at).getTime() / 1000) }
+        ? {
+            role: userRole,
+            roles: [userRole],
+            updated_at: Math.floor(new Date(user.updated_at).getTime() / 1000),
+          }
         : {}),
     };
   }

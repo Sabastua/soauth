@@ -35,6 +35,9 @@ export interface AccessTokenPayload extends JWTPayload {
   scope: string;
   /** Explicit token type header/claim */
   token_use: 'access';
+  /** RBAC Role & Roles claims */
+  role?: string;
+  roles?: string[];
 }
 
 /**
@@ -62,6 +65,9 @@ export interface IdTokenPayload extends JWTPayload {
   /** Optional profile/email scope claims */
   email?: string;
   email_verified?: boolean;
+  /** RBAC Role & Roles claims */
+  role?: string;
+  roles?: string[];
 }
 
 /**

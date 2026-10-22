@@ -19,6 +19,7 @@ export interface SoAuthContextValue extends SoAuthState {
   loginWithRedirect: (customScope?: string) => Promise<void>;
   logout: (postLogoutRedirectUri?: string) => Promise<void>;
   getAccessToken: () => Promise<string | null>;
+  hasRole: (expectedRole: string) => boolean;
 }
 
 /**
@@ -71,6 +72,7 @@ export function createSoAuthReact(React: ReactLike) {
         loginWithRedirect: (scope?: string) => client.loginWithRedirect(scope),
         logout: (postLogoutRedirectUri?: string) => client.logout(postLogoutRedirectUri),
         getAccessToken: () => client.getAccessToken(),
+        hasRole: (expectedRole: string) => client.hasRole(expectedRole),
       }),
       [state, client],
     );

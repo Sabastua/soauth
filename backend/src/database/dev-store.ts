@@ -33,6 +33,8 @@ export async function initializeDevMemoryStore(): Promise<void> {
     id: '11111111-1111-4000-8000-111111111111',
     email: 'admin@soauth.internal',
     password_hash: adminPasswordHash,
+    email_verified: true,
+    role: 'admin',
     is_mfa_enabled: false,
     mfa_secret_encrypted: null,
     is_active: true,
@@ -66,12 +68,20 @@ export async function initializeDevMemoryStore(): Promise<void> {
 
   const defaultClient: RegisteredClientRow = {
     id: '00000000-0000-4000-8000-000000000001',
+    owner_user_id: adminUser.id,
     client_secret_hash: clientSecretHash,
     app_name: 'soauth Reference Web App',
     is_confidential: true,
     redirect_uris: Array.from(new Set(dynamicRedirectUris)),
     allowed_scopes: ['openid', 'profile', 'email', 'offline_access'],
     require_pkce: true,
+    logo_url: null,
+    primary_color: '#0284c7',
+    app_website_url: 'https://github.com/Sabastua/soauth',
+    privacy_policy_url: null,
+    terms_of_service_url: null,
+    webhook_url: null,
+    webhook_secret: 'whsec_soauth_default_dev_secret_2026',
     created_at: new Date(),
     updated_at: new Date(),
   };
@@ -80,12 +90,21 @@ export async function initializeDevMemoryStore(): Promise<void> {
   // 3. Patch repository methods with in-memory implementations
   userRepository.findById = async (id: string) => usersStore.get(id);
   userRepository.findByEmail = async (email: string) => usersStore.get(email.toLowerCase().trim());
+  userRepository.listAll = async () => {
+    const unique = new Map<string, UserRow>();
+    for (const u of usersStore.values()) {
+      unique.set(u.id, u);
+    }
+    return Array.from(unique.values());
+  };
   userRepository.create = async (user) => {
     const id = randomUUID();
     const row: UserRow = {
       id,
       email: user.email.toLowerCase().trim(),
       password_hash: user.password_hash,
+      email_verified: user.email_verified ?? false,
+      role: user.role ?? 'member',
       is_mfa_enabled: user.is_mfa_enabled ?? false,
       mfa_secret_encrypted: user.mfa_secret_encrypted ?? null,
       is_active: user.is_active ?? true,
@@ -103,6 +122,22 @@ export async function initializeDevMemoryStore(): Promise<void> {
     const user = usersStore.get(userId);
     if (user) {
       user.password_hash = newPasswordHash;
+      user.updated_at = new Date();
+    }
+  };
+
+  userRepository.markEmailVerified = async (userId: string) => {
+    const user = usersStore.get(userId);
+    if (user) {
+      user.email_verified = true;
+      user.updated_at = new Date();
+    }
+  };
+
+  userRepository.updateRole = async (userId: string, role: string) => {
+    const user = usersStore.get(userId);
+    if (user) {
+      user.role = role;
       user.updated_at = new Date();
     }
   };
@@ -173,12 +208,20 @@ export async function initializeDevMemoryStore(): Promise<void> {
   clientRepository.create = async (client) => {
     const row: RegisteredClientRow = {
       id: client.id ?? randomUUID(),
+      owner_user_id: client.owner_user_id ?? null,
       app_name: client.app_name,
       redirect_uris: client.redirect_uris,
       allowed_scopes: client.allowed_scopes ?? ['openid', 'profile', 'email'],
       is_confidential: client.is_confidential ?? true,
       client_secret_hash: client.client_secret_hash ?? null,
       require_pkce: client.require_pkce ?? true,
+      logo_url: client.logo_url ?? null,
+      primary_color: client.primary_color ?? '#0284c7',
+      app_website_url: client.app_website_url ?? null,
+      privacy_policy_url: client.privacy_policy_url ?? null,
+      terms_of_service_url: client.terms_of_service_url ?? null,
+      webhook_url: client.webhook_url ?? null,
+      webhook_secret: client.webhook_secret ?? `whsec_${randomUUID().replace(/-/g, '')}`,
       created_at: new Date(),
       updated_at: new Date(),
     };
@@ -187,6 +230,10 @@ export async function initializeDevMemoryStore(): Promise<void> {
   };
 
   clientRepository.listAll = async () => Array.from(clientsStore.values());
+  clientRepository.listByOwner = async (ownerUserId: string) =>
+    Array.from(clientsStore.values()).filter(
+      (c) => !c.owner_user_id || c.owner_user_id === ownerUserId,
+    );
   clientRepository.deleteById = async (id: string) => {
     clientsStore.delete(id);
   };
@@ -196,6 +243,12 @@ export async function initializeDevMemoryStore(): Promise<void> {
       client.client_secret_hash = newSecretHash;
       client.updated_at = new Date();
     }
+  };
+  clientRepository.updateSettings = async (id, patch) => {
+    const client = clientsStore.get(id);
+    if (!client) return undefined;
+    Object.assign(client, patch, { updated_at: new Date() });
+    return client;
   };
 
   sessionAndTokenRepository.createSession = async (session) => {
@@ -236,6 +289,16 @@ export async function initializeDevMemoryStore(): Promise<void> {
     const list: ActiveSessionRow[] = [];
     for (const s of sessionsStore.values()) {
       if (s.user_id === userId && !s.is_revoked && new Date(s.expires_at).getTime() > Date.now()) {
+        list.push(s);
+      }
+    }
+    return list;
+  };
+
+  sessionAndTokenRepository.listSessionsForClient = async (clientId: string) => {
+    const list: ActiveSessionRow[] = [];
+    for (const s of sessionsStore.values()) {
+      if (s.client_id === clientId) {
         list.push(s);
       }
     }

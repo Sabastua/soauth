@@ -48,6 +48,15 @@ export class SessionAndTokenRepository {
       .execute();
   }
 
+  public async listSessionsForClient(clientId: string): Promise<ActiveSessionRow[]> {
+    return db
+      .selectFrom('active_sessions')
+      .selectAll()
+      .where('client_id', '=', clientId)
+      .orderBy('created_at', 'desc')
+      .execute();
+  }
+
   public async createRefreshToken(token: NewRefreshTokenRow): Promise<RefreshTokenRow> {
     return db
       .insertInto('refresh_tokens')

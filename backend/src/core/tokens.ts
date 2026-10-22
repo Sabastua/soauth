@@ -188,6 +188,7 @@ export class TokenCryptoManager {
     clientId: string;
     sessionId: string;
     scope: string;
+    role?: string;
     audience?: string | string[];
     ttlSeconds?: number;
   }): Promise<{ token: string; expiresIn: number; jti: string }> {
@@ -195,6 +196,7 @@ export class TokenCryptoManager {
     const now = Math.floor(Date.now() / 1000);
     const expiresIn = params.ttlSeconds ?? 900;
     const jti = randomUUID();
+    const resolvedRole = params.role ?? 'member';
 
     const payload: AccessTokenPayload = {
       iss: this.issuer,
@@ -207,6 +209,8 @@ export class TokenCryptoManager {
       sid: params.sessionId,
       scope: params.scope,
       token_use: 'access',
+      role: resolvedRole,
+      roles: [resolvedRole],
     };
 
     const token = await new SignJWT(payload)
@@ -228,11 +232,14 @@ export class TokenCryptoManager {
     accessToken: string;
     nonce?: string;
     email?: string;
+    emailVerified?: boolean;
+    role?: string;
     ttlSeconds?: number;
   }): Promise<string> {
     const key = this.ensureKeyInitialized();
     const now = Math.floor(Date.now() / 1000);
     const expiresIn = params.ttlSeconds ?? 3600;
+    const resolvedRole = params.role ?? 'member';
 
     const payload: IdTokenPayload = {
       iss: this.issuer,
@@ -243,8 +250,12 @@ export class TokenCryptoManager {
       auth_time: params.authTime,
       sid: params.sessionId,
       at_hash: computeOidcAtHash(params.accessToken),
+      role: resolvedRole,
+      roles: [resolvedRole],
       ...(params.nonce !== undefined ? { nonce: params.nonce } : {}),
-      ...(params.email !== undefined ? { email: params.email, email_verified: true } : {}),
+      ...(params.email !== undefined
+        ? { email: params.email, email_verified: params.emailVerified ?? true }
+        : {}),
     };
 
     return new SignJWT(payload)

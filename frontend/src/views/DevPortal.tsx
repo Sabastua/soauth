@@ -2,21 +2,30 @@ import React, { useEffect, useState } from 'react';
 import {
   BACKEND_URL,
   type ActiveSessionInfo,
+  type AppDirectoryUser,
   type ClientAppItem,
   type NewClientResponse,
+  type SaasOverviewResponse,
   type SessionUserInfo,
+  confirmEmailVerificationOtp,
   deleteClientApp,
   disableMfa,
   enableMfa,
+  fetchClientUsers,
   fetchClients,
   fetchCurrentSession,
+  fetchSaasOverview,
   fetchUserSessions,
   regenerateClientSecret,
   registerClientApp,
   revokeUserSession,
+  sendEmailVerificationOtp,
   setupMfa,
   submitPortalLogin,
   submitPortalLogout,
+  triggerTestWebhook,
+  updateClientSettings,
+  updateClientUser,
 } from '../services/api.js';
 
 interface DevPortalProps {
@@ -32,8 +41,8 @@ export const DevPortal: React.FC<DevPortalProps> = ({ onBackToLogin }) => {
   const [loginMfaCode, setLoginMfaCode] = useState('');
   const [loginLoading, setLoginLoading] = useState(false);
 
-  // Navigation Tabs
-  const [activeTab, setActiveTab] = useState<'apps' | 'security'>('apps');
+  // Navigation Tabs (4 SaaS Pillars)
+  const [activeTab, setActiveTab] = useState<'apps' | 'branding' | 'users' | 'security'>('apps');
 
   // Clients & Quickstart state
   const [clients, setClients] = useState<ClientAppItem[]>([]);
@@ -54,7 +63,21 @@ export const DevPortal: React.FC<DevPortalProps> = ({ onBackToLogin }) => {
   const [createdSecretInfo, setCreatedSecretInfo] = useState<NewClientResponse | null>(null);
   const [revealedSecret, setRevealedSecret] = useState<{ clientId: string; secret: string } | null>(null);
 
-  // Security & Sessions state
+  // Branding & Webhook Editor state
+  const [brandLogoUrl, setBrandLogoUrl] = useState('');
+  const [brandPrimaryColor, setBrandPrimaryColor] = useState('#0284c7');
+  const [brandWebsiteUrl, setBrandWebsiteUrl] = useState('');
+  const [brandPrivacyUrl, setBrandPrivacyUrl] = useState('');
+  const [brandTermsUrl, setBrandTermsUrl] = useState('');
+  const [webhookUrl, setWebhookUrl] = useState('');
+  const [savingSettings, setSavingSettings] = useState(false);
+
+  // Per-App User Directory & RBAC state
+  const [appUsers, setAppUsers] = useState<AppDirectoryUser[]>([]);
+  const [usersLoading, setUsersLoading] = useState(false);
+
+  // SaaS Usage, Audit Logs, Email Verification & 2FA state
+  const [saasOverview, setSaasOverview] = useState<SaasOverviewResponse | null>(null);
   const [sessions, setSessions] = useState<ActiveSessionInfo[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(false);
   const [mfaSetupData, setMfaSetupData] = useState<{
@@ -64,14 +87,29 @@ export const DevPortal: React.FC<DevPortalProps> = ({ onBackToLogin }) => {
   } | null>(null);
   const [mfaVerifyCode, setMfaVerifyCode] = useState('');
   const [mfaSubmitting, setMfaSubmitting] = useState(false);
+  const [emailOtpSent, setEmailOtpSent] = useState(false);
+  const [emailOtpCode, setEmailOtpCode] = useState('');
+
+  const syncBrandingFormFromClient = (client: ClientAppItem | undefined) => {
+    if (!client) return;
+    setBrandLogoUrl(client.logo_url ?? '');
+    setBrandPrimaryColor(client.primary_color ?? '#0284c7');
+    setBrandWebsiteUrl(client.app_website_url ?? '');
+    setBrandPrivacyUrl(client.privacy_policy_url ?? '');
+    setBrandTermsUrl(client.terms_of_service_url ?? '');
+    setWebhookUrl(client.webhook_url ?? '');
+  };
 
   const loadClients = async () => {
     try {
       setLoading(true);
       const data = await fetchClients();
       setClients(data);
-      if (data.length > 0 && !selectedClientId) {
-        setSelectedClientId(data[0]!.id);
+      const activeId = selectedClientId || data[0]?.id || '';
+      if (activeId) {
+        setSelectedClientId(activeId);
+        const found = data.find((c) => c.id === activeId) ?? data[0];
+        syncBrandingFormFromClient(found);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load clients');
@@ -80,13 +118,27 @@ export const DevPortal: React.FC<DevPortalProps> = ({ onBackToLogin }) => {
     }
   };
 
-  const loadSessions = async () => {
+  const loadAppUsers = async (clientId: string) => {
+    if (!clientId) return;
+    try {
+      setUsersLoading(true);
+      const list = await fetchClientUsers(clientId);
+      setAppUsers(list);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not load application users');
+    } finally {
+      setUsersLoading(false);
+    }
+  };
+
+  const loadSecurityAndSaasOverview = async () => {
     try {
       setSessionsLoading(true);
-      const list = await fetchUserSessions();
-      setSessions(list);
+      const [sessList, overview] = await Promise.all([fetchUserSessions(), fetchSaasOverview()]);
+      setSessions(sessList);
+      setSaasOverview(overview);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not load active sessions');
+      setError(err instanceof Error ? err.message : 'Could not load security & SaaS overview');
     } finally {
       setSessionsLoading(false);
     }
@@ -98,7 +150,7 @@ export const DevPortal: React.FC<DevPortalProps> = ({ onBackToLogin }) => {
         if (res.authenticated && res.user) {
           setCurrentUser(res.user);
           void loadClients();
-          void loadSessions();
+          void loadSecurityAndSaasOverview();
         }
       })
       .catch(() => {
@@ -108,6 +160,16 @@ export const DevPortal: React.FC<DevPortalProps> = ({ onBackToLogin }) => {
         setAuthChecking(false);
       });
   }, []);
+
+  useEffect(() => {
+    const client = clients.find((c) => c.id === selectedClientId);
+    if (client) {
+      syncBrandingFormFromClient(client);
+      if (activeTab === 'users') {
+        void loadAppUsers(client.id);
+      }
+    }
+  }, [selectedClientId]);
 
   const handlePortalLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -121,7 +183,7 @@ export const DevPortal: React.FC<DevPortalProps> = ({ onBackToLogin }) => {
       });
       setCurrentUser(res.user);
       setLoginMfaCode('');
-      await Promise.all([loadClients(), loadSessions()]);
+      await Promise.all([loadClients(), loadSecurityAndSaasOverview()]);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed');
     } finally {
@@ -164,6 +226,98 @@ export const DevPortal: React.FC<DevPortalProps> = ({ onBackToLogin }) => {
       await loadClients();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Registration failed');
+    }
+  };
+
+  const handleSaveBrandingAndWebhooks = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedClientId) return;
+    setError(null);
+    setSavingSettings(true);
+    try {
+      await updateClientSettings(selectedClientId, {
+        logo_url: brandLogoUrl.trim() || null,
+        primary_color: brandPrimaryColor.trim() || '#0284c7',
+        app_website_url: brandWebsiteUrl.trim() || null,
+        privacy_policy_url: brandPrivacyUrl.trim() || null,
+        terms_of_service_url: brandTermsUrl.trim() || null,
+        webhook_url: webhookUrl.trim() || null,
+      });
+      setSuccessMsg('Custom branding & webhook settings saved!');
+      await loadClients();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save settings');
+    } finally {
+      setSavingSettings(false);
+    }
+  };
+
+  const handleTestWebhook = async () => {
+    if (!selectedClientId) return;
+    setError(null);
+    try {
+      const res = await triggerTestWebhook(selectedClientId);
+      if (res.delivered) {
+        setSuccessMsg(`HMAC-signed test webhook delivered (HTTP ${res.statusCode})!`);
+      } else {
+        setError(`Webhook delivery failed: ${res.error ?? `HTTP ${res.statusCode}`}`);
+      }
+      await loadSecurityAndSaasOverview();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to send test webhook');
+    }
+  };
+
+  const handleUpdateUserRole = async (userId: string, newRole: string) => {
+    if (!selectedClientId) return;
+    setError(null);
+    try {
+      await updateClientUser(selectedClientId, userId, { role: newRole });
+      setSuccessMsg(`Updated user RBAC role to "${newRole}".`);
+      await loadAppUsers(selectedClientId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update role');
+    }
+  };
+
+  const handleRevokeAppUserSessions = async (userId: string, email: string) => {
+    if (!selectedClientId) return;
+    if (!window.confirm(`Revoke all active sessions for ${email}?`)) return;
+    setError(null);
+    try {
+      await updateClientUser(selectedClientId, userId, { revoke_sessions: true });
+      setSuccessMsg(`Revoked all active sessions for ${email}.`);
+      await loadAppUsers(selectedClientId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to revoke user sessions');
+    }
+  };
+
+  const handleSendEmailOtp = async () => {
+    setError(null);
+    try {
+      const res = await sendEmailVerificationOtp();
+      setEmailOtpSent(true);
+      if (res.dev_otp_code) {
+        setEmailOtpCode(res.dev_otp_code);
+      }
+      setSuccessMsg(res.message);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to send verification code');
+    }
+  };
+
+  const handleConfirmEmailOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    try {
+      const res = await confirmEmailVerificationOtp(emailOtpCode);
+      setCurrentUser((prev) => (prev ? { ...prev, email_verified: true } : prev));
+      setEmailOtpSent(false);
+      setSuccessMsg(res.message);
+      await loadSecurityAndSaasOverview();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Verification failed');
     }
   };
 
@@ -213,6 +367,7 @@ export const DevPortal: React.FC<DevPortalProps> = ({ onBackToLogin }) => {
       setMfaSetupData(null);
       setMfaVerifyCode('');
       setSuccessMsg('Two-Factor Authentication (TOTP) enabled on your account!');
+      await loadSecurityAndSaasOverview();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to verify 2FA code');
     } finally {
@@ -228,6 +383,7 @@ export const DevPortal: React.FC<DevPortalProps> = ({ onBackToLogin }) => {
       setCurrentUser((prev) => (prev ? { ...prev, is_mfa_enabled: false } : prev));
       setMfaSetupData(null);
       setSuccessMsg('Two-Factor Authentication has been disabled.');
+      await loadSecurityAndSaasOverview();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to disable 2FA');
     }
@@ -241,7 +397,7 @@ export const DevPortal: React.FC<DevPortalProps> = ({ onBackToLogin }) => {
         setSuccessMsg('Current session revoked. Please sign in again.');
       } else {
         setSuccessMsg('Session revoked.');
-        await loadSessions();
+        await loadSecurityAndSaasOverview();
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to revoke session');
@@ -277,7 +433,7 @@ export const DevPortal: React.FC<DevPortalProps> = ({ onBackToLogin }) => {
               borderRadius: '999px',
             }}
           >
-            soauth Dashboard
+            soauth SaaS Cloud
           </span>
           {onBackToLogin && (
             <button
@@ -299,7 +455,7 @@ export const DevPortal: React.FC<DevPortalProps> = ({ onBackToLogin }) => {
 
         <h1 style={{ fontSize: '1.4rem', fontWeight: 700, marginBottom: '0.25rem' }}>Developer Portal Sign In</h1>
         <p style={{ fontSize: '0.85rem', color: '#64748b', marginBottom: '1.25rem' }}>
-          Sign in to manage OAuth applications, grab Clerk-style SDK snippets, and configure 2FA security.
+          Sign in to manage multi-tenant OAuth apps, custom branding, webhooks, RBAC roles, and 2FA security.
         </p>
 
         {error && <div className="oauth-error">{error}</div>}
@@ -352,7 +508,7 @@ export const DevPortal: React.FC<DevPortalProps> = ({ onBackToLogin }) => {
             />
           </div>
           <button type="submit" disabled={loginLoading} style={{ width: '100%' }}>
-            {loginLoading ? 'Signing in...' : 'Sign In to Dashboard'}
+            {loginLoading ? 'Signing in...' : 'Sign In to SaaS Dashboard'}
           </button>
         </form>
       </div>
@@ -419,20 +575,19 @@ const auth = new SoAuthClient({
   redirectUri: '${sampleRedirectUri}',
 });
 
-// Automatically exchanges ?code=... on redirect or restores session
 const state = await auth.initialize();
 
 if (!state.isAuthenticated) {
   await auth.loginWithRedirect();
 } else {
-  console.log('Logged in as:', state.user?.email);
+  console.log('User:', state.user?.email, 'Is Admin?', auth.hasRole('admin'));
 }`;
 
   const currentSnippet =
     snippetTab === 'react' ? reactSnippet : snippetTab === 'nextjs' ? nextjsSnippet : vanillaSnippet;
 
   return (
-    <div style={{ maxWidth: '880px', width: '100%', margin: '0 auto' }}>
+    <div style={{ maxWidth: '940px', width: '100%', margin: '0 auto' }}>
       {/* Top Header & Account Bar */}
       <header
         style={{
@@ -445,8 +600,21 @@ if (!state.isAuthenticated) {
         }}
       >
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <h1 style={{ fontSize: '1.55rem', fontWeight: 700, color: '#0f172a' }}>soauth Cloud Dashboard</h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+            <h1 style={{ fontSize: '1.55rem', fontWeight: 700, color: '#0f172a' }}>soauth SaaS Cloud</h1>
+            <span
+              style={{
+                background: '#e0f2fe',
+                color: '#0369a1',
+                fontSize: '0.72rem',
+                fontWeight: 700,
+                padding: '0.15rem 0.55rem',
+                borderRadius: '999px',
+                textTransform: 'uppercase',
+              }}
+            >
+              Role: {currentUser.role ?? 'member'}
+            </span>
             <span
               style={{
                 background: currentUser.is_mfa_enabled ? '#dcfce7' : '#f1f5f9',
@@ -457,11 +625,11 @@ if (!state.isAuthenticated) {
                 borderRadius: '999px',
               }}
             >
-              {currentUser.is_mfa_enabled ? '🔒 2FA Protected' : '2FA Off'}
+              {currentUser.is_mfa_enabled ? '🔒 2FA Active' : '2FA Off'}
             </span>
           </div>
           <p style={{ color: '#64748b', fontSize: '0.85rem' }}>
-            Signed in as <strong>{currentUser.email}</strong> · Issuer: <code>{BACKEND_URL}</code>
+            Tenant: <strong>{currentUser.email}</strong> · Issuer: <code>{BACKEND_URL}</code>
           </p>
         </div>
 
@@ -472,7 +640,7 @@ if (!state.isAuthenticated) {
               onClick={onBackToLogin}
               style={{ background: '#f1f5f9', color: '#334155', border: '1px solid #cbd5e1', fontSize: '0.85rem' }}
             >
-              OAuth Login View
+              Hosted Login Preview
             </button>
           )}
           <button
@@ -485,14 +653,15 @@ if (!state.isAuthenticated) {
         </div>
       </header>
 
-      {/* Navigation Tabs */}
+      {/* 4 SaaS Navigation Tabs */}
       <div
         style={{
           display: 'flex',
-          gap: '0.5rem',
+          gap: '0.45rem',
           borderBottom: '1px solid #e2e8f0',
           marginBottom: '1.5rem',
           paddingBottom: '0.5rem',
+          flexWrap: 'wrap',
         }}
       >
         <button
@@ -503,26 +672,55 @@ if (!state.isAuthenticated) {
             color: activeTab === 'apps' ? '#ffffff' : '#334155',
             border: '1px solid',
             borderColor: activeTab === 'apps' ? '#0284c7' : '#cbd5e1',
-            fontSize: '0.85rem',
+            fontSize: '0.82rem',
           }}
         >
-          Applications & SDK Quickstart ({clients.length})
+          1. Apps & SDK Quickstart ({clients.length})
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('branding')}
+          style={{
+            background: activeTab === 'branding' ? '#0284c7' : '#f8fafc',
+            color: activeTab === 'branding' ? '#ffffff' : '#334155',
+            border: '1px solid',
+            borderColor: activeTab === 'branding' ? '#0284c7' : '#cbd5e1',
+            fontSize: '0.82rem',
+          }}
+        >
+          2. Custom Branding & Webhooks
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setActiveTab('users');
+            if (activeClient) void loadAppUsers(activeClient.id);
+          }}
+          style={{
+            background: activeTab === 'users' ? '#0284c7' : '#f8fafc',
+            color: activeTab === 'users' ? '#ffffff' : '#334155',
+            border: '1px solid',
+            borderColor: activeTab === 'users' ? '#0284c7' : '#cbd5e1',
+            fontSize: '0.82rem',
+          }}
+        >
+          3. Users & RBAC Roles
         </button>
         <button
           type="button"
           onClick={() => {
             setActiveTab('security');
-            void loadSessions();
+            void loadSecurityAndSaasOverview();
           }}
           style={{
             background: activeTab === 'security' ? '#0284c7' : '#f8fafc',
             color: activeTab === 'security' ? '#ffffff' : '#334155',
             border: '1px solid',
             borderColor: activeTab === 'security' ? '#0284c7' : '#cbd5e1',
-            fontSize: '0.85rem',
+            fontSize: '0.82rem',
           }}
         >
-          Account Security & Active Sessions ({sessions.length})
+          4. MAU Usage, Audit Logs & 2FA
         </button>
       </div>
 
@@ -548,10 +746,11 @@ if (!state.isAuthenticated) {
         </div>
       )}
 
-      {activeTab === 'apps' ? (
+      {/* TAB 1: APPLICATIONS & SDK QUICKSTART */}
+      {activeTab === 'apps' && (
         <>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-            <h2 style={{ fontSize: '1.2rem', fontWeight: 600 }}>Registered OAuth 2.0 / OIDC Applications</h2>
+            <h2 style={{ fontSize: '1.2rem', fontWeight: 600 }}>Your Tenant OAuth 2.0 / OIDC Applications</h2>
             <button
               type="button"
               onClick={() => {
@@ -721,21 +920,6 @@ if (!state.isAuthenticated) {
           <section>
             {loading ? (
               <p style={{ color: '#64748b' }}>Loading client applications...</p>
-            ) : clients.length === 0 ? (
-              <div
-                style={{
-                  background: '#ffffff',
-                  padding: '2rem',
-                  border: '1px dashed #cbd5e1',
-                  borderRadius: '8px',
-                  textAlign: 'center',
-                }}
-              >
-                <p style={{ color: '#64748b', marginBottom: '0.5rem' }}>No clients registered yet.</p>
-                <button type="button" onClick={() => setShowCreateModal(true)}>
-                  Register Your First App
-                </button>
-              </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                 {clients.map((client) => (
@@ -751,14 +935,25 @@ if (!state.isAuthenticated) {
                       gap: '0.75rem',
                     }}
                   >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div>
-                        <h3 style={{ fontSize: '1.1rem', fontWeight: 600 }}>{client.app_name}</h3>
-                        <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
-                          Registered: {new Date(client.created_at).toLocaleDateString()}
-                        </span>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                        <span
+                          style={{
+                            width: '14px',
+                            height: '14px',
+                            borderRadius: '50%',
+                            background: client.primary_color || '#0284c7',
+                            display: 'inline-block',
+                          }}
+                        />
+                        <div>
+                          <h3 style={{ fontSize: '1.1rem', fontWeight: 600 }}>{client.app_name}</h3>
+                          <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                            Registered: {new Date(client.created_at).toLocaleDateString()}
+                          </span>
+                        </div>
                       </div>
-                      <div style={{ display: 'flex', gap: '0.5rem' }}>
+                      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                         <button
                           type="button"
                           onClick={() => setSelectedClientId(client.id)}
@@ -770,7 +965,23 @@ if (!state.isAuthenticated) {
                             padding: '0.4rem 0.75rem',
                           }}
                         >
-                          {selectedClientId === client.id ? '✓ Selected for Quickstart' : 'Use in Quickstart'}
+                          {selectedClientId === client.id ? '✓ Active App' : 'Select App'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedClientId(client.id);
+                            setActiveTab('branding');
+                          }}
+                          style={{
+                            background: '#f8fafc',
+                            color: '#0f172a',
+                            border: '1px solid #cbd5e1',
+                            fontSize: '0.8rem',
+                            padding: '0.4rem 0.75rem',
+                          }}
+                        >
+                          Branding & Webhooks
                         </button>
                         {client.is_confidential && (
                           <button
@@ -823,41 +1034,6 @@ if (!state.isAuthenticated) {
                             {uri}
                           </code>
                         ))}
-                      </div>
-
-                      <div>
-                        <span style={{ color: '#64748b' }}>Allowed Scopes: </span>
-                        {client.allowed_scopes.map((sc) => (
-                          <span
-                            key={sc}
-                            style={{
-                              background: '#f1f5f9',
-                              padding: '0.15rem 0.45rem',
-                              borderRadius: '4px',
-                              fontSize: '0.75rem',
-                              marginRight: '0.35rem',
-                            }}
-                          >
-                            {sc}
-                          </span>
-                        ))}
-                      </div>
-
-                      <div
-                        style={{
-                          display: 'flex',
-                          gap: '1rem',
-                          marginTop: '0.25rem',
-                          fontSize: '0.8rem',
-                          color: '#64748b',
-                        }}
-                      >
-                        <span>
-                          Type: <strong>{client.is_confidential ? 'Confidential' : 'Public (PKCE)'}</strong>
-                        </span>
-                        <span>
-                          PKCE Required: <strong>{client.require_pkce ? 'Yes (S256)' : 'No'}</strong>
-                        </span>
                       </div>
                     </div>
                   </div>
@@ -961,9 +1137,400 @@ if (!state.isAuthenticated) {
             </pre>
           </section>
         </>
-      ) : (
-        /* Security & Active Sessions Tab */
+      )}
+
+      {/* TAB 2: CUSTOM BRANDING & WEBHOOKS */}
+      {activeTab === 'branding' && activeClient && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+          <section
+            style={{
+              background: '#ffffff',
+              border: '1px solid #e2e8f0',
+              borderRadius: '8px',
+              padding: '1.35rem',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+              <div>
+                <h2 style={{ fontSize: '1.15rem', fontWeight: 700 }}>
+                  White-Label Login Branding & Signed Webhooks
+                </h2>
+                <p style={{ fontSize: '0.85rem', color: '#64748b' }}>
+                  Customizing application: <strong>{activeClient.app_name}</strong> (<code>{activeClient.id}</code>)
+                </p>
+              </div>
+              <select
+                value={selectedClientId}
+                onChange={(e) => setSelectedClientId(e.target.value)}
+                style={{ padding: '0.45rem 0.75rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.85rem' }}
+              >
+                {clients.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.app_name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <form onSubmit={handleSaveBrandingAndWebhooks}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 180px', gap: '1rem' }}>
+                <div>
+                  <label>Brand Logo URL (PNG/SVG)</label>
+                  <input
+                    type="url"
+                    placeholder="https://example.com/logo.svg"
+                    value={brandLogoUrl}
+                    onChange={(e) => setBrandLogoUrl(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label>Primary Brand Color</label>
+                  <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                    <input
+                      type="color"
+                      value={brandPrimaryColor}
+                      onChange={(e) => setBrandPrimaryColor(e.target.value)}
+                      style={{ width: '42px', height: '38px', padding: '2px', cursor: 'pointer' }}
+                    />
+                    <input
+                      type="text"
+                      value={brandPrimaryColor}
+                      onChange={(e) => setBrandPrimaryColor(e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <div>
+                  <label>Terms of Service URL (displayed on Login Footer)</label>
+                  <input
+                    type="url"
+                    placeholder="https://example.com/terms"
+                    value={brandTermsUrl}
+                    onChange={(e) => setBrandTermsUrl(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label>Privacy Policy URL (displayed on Login Footer)</label>
+                  <input
+                    type="url"
+                    placeholder="https://example.com/privacy"
+                    value={brandPrivacyUrl}
+                    onChange={(e) => setBrandPrivacyUrl(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <hr style={{ border: 'none', borderTop: '1px solid #e2e8f0', margin: '1rem 0' }} />
+
+              <h3 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: '0.35rem' }}>
+                Event Webhooks (HMAC-SHA256 Signed)
+              </h3>
+              <p style={{ fontSize: '0.82rem', color: '#64748b', marginBottom: '0.75rem' }}>
+                Receive real-time POST requests with header <code>X-SoAuth-Signature</code> on{' '}
+                <code>user.created</code> and <code>user.logged_in</code>.
+              </p>
+
+              <div>
+                <label>Webhook Endpoint URL</label>
+                <input
+                  type="url"
+                  placeholder="https://your-api.example.com/webhooks/soauth"
+                  value={webhookUrl}
+                  onChange={(e) => setWebhookUrl(e.target.value)}
+                />
+              </div>
+
+              {activeClient.webhook_secret && (
+                <div style={{ marginBottom: '1rem', fontSize: '0.85rem' }}>
+                  <span style={{ color: '#64748b' }}>Webhook Signing Secret: </span>
+                  <code style={{ background: '#f1f5f9', padding: '0.2rem 0.45rem', borderRadius: '4px' }}>
+                    {activeClient.webhook_secret}
+                  </code>
+                  <button
+                    type="button"
+                    style={{ marginLeft: '0.5rem', padding: '0.15rem 0.45rem', fontSize: '0.75rem' }}
+                    onClick={() => copyToClipboard(activeClient.webhook_secret!, 'Webhook Signing Secret')}
+                  >
+                    Copy
+                  </button>
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: '0.65rem' }}>
+                <button type="submit" disabled={savingSettings}>
+                  {savingSettings ? 'Saving...' : 'Save Branding & Webhook Settings'}
+                </button>
+                {webhookUrl && (
+                  <button
+                    type="button"
+                    onClick={handleTestWebhook}
+                    style={{ background: '#0f172a', color: '#ffffff' }}
+                  >
+                    Send Test Webhook
+                  </button>
+                )}
+              </div>
+            </form>
+          </section>
+        </div>
+      )}
+
+      {/* TAB 3: USERS & RBAC ROLES DIRECTORY */}
+      {activeTab === 'users' && activeClient && (
+        <section
+          style={{
+            background: '#ffffff',
+            border: '1px solid #e2e8f0',
+            borderRadius: '8px',
+            padding: '1.35rem',
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+            <div>
+              <h2 style={{ fontSize: '1.15rem', fontWeight: 700 }}>
+                User Directory & Role-Based Access Control (RBAC)
+              </h2>
+              <p style={{ fontSize: '0.85rem', color: '#64748b' }}>
+                Assign roles (embedded in RS256 Access & ID Token JWTs as <code>role</code> and <code>roles</code>) or revoke user sessions.
+              </p>
+            </div>
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <select
+                value={selectedClientId}
+                onChange={(e) => setSelectedClientId(e.target.value)}
+                style={{ padding: '0.4rem 0.7rem', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.85rem' }}
+              >
+                {clients.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.app_name}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => void loadAppUsers(activeClient.id)}
+                style={{ background: '#f1f5f9', color: '#334155', border: '1px solid #cbd5e1', fontSize: '0.8rem' }}
+              >
+                Refresh
+              </button>
+            </div>
+          </div>
+
+          {usersLoading ? (
+            <p style={{ color: '#64748b', fontSize: '0.85rem' }}>Loading users...</p>
+          ) : appUsers.length === 0 ? (
+            <p style={{ color: '#64748b', fontSize: '0.85rem' }}>
+              No users have signed into this application yet.
+            </p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+              {appUsers.map((u) => (
+                <div
+                  key={u.id}
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: '0.9rem 1rem',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: '8px',
+                    flexWrap: 'wrap',
+                    gap: '0.75rem',
+                  }}
+                >
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                      <strong style={{ fontSize: '0.95rem', color: '#0f172a' }}>{u.email}</strong>
+                      <span
+                        style={{
+                          background: u.email_verified ? '#dcfce7' : '#fef3c7',
+                          color: u.email_verified ? '#166534' : '#92400e',
+                          fontSize: '0.7rem',
+                          fontWeight: 600,
+                          padding: '0.1rem 0.45rem',
+                          borderRadius: '999px',
+                        }}
+                      >
+                        {u.email_verified ? '✓ Verified Email' : 'Unverified'}
+                      </span>
+                      {u.is_mfa_enabled && (
+                        <span
+                          style={{
+                            background: '#e0f2fe',
+                            color: '#0369a1',
+                            fontSize: '0.7rem',
+                            fontWeight: 600,
+                            padding: '0.1rem 0.45rem',
+                            borderRadius: '999px',
+                          }}
+                        >
+                          2FA Enabled
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ fontSize: '0.78rem', color: '#64748b', marginTop: '0.2rem' }}>
+                      User ID: <code>{u.id}</code> · Active Sessions: <strong>{u.active_sessions}</strong>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <label style={{ fontSize: '0.78rem', margin: 0, color: '#475569' }}>RBAC Role:</label>
+                    <select
+                      value={u.role}
+                      onChange={(e) => void handleUpdateUserRole(u.id, e.target.value)}
+                      style={{
+                        padding: '0.35rem 0.6rem',
+                        borderRadius: '6px',
+                        border: '1px solid #cbd5e1',
+                        fontSize: '0.8rem',
+                        fontWeight: 600,
+                      }}
+                    >
+                      <option value="admin">admin</option>
+                      <option value="member">member</option>
+                      <option value="billing">billing</option>
+                      <option value="viewer">viewer</option>
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => void handleRevokeAppUserSessions(u.id, u.email)}
+                      style={{
+                        background: '#fee2e2',
+                        color: '#991b1b',
+                        border: '1px solid #fca5a5',
+                        fontSize: '0.75rem',
+                        padding: '0.35rem 0.65rem',
+                      }}
+                    >
+                      Revoke Sessions
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* TAB 4: SAAS MAU ANALYTICS, SECURITY AUDIT LOGS & 2FA */}
+      {activeTab === 'security' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+          {/* SaaS MAU Usage & Plan Quota Card */}
+          {saasOverview && (
+            <section
+              style={{
+                background: '#ffffff',
+                border: '1px solid #e2e8f0',
+                borderRadius: '8px',
+                padding: '1.35rem',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                <div>
+                  <h2 style={{ fontSize: '1.15rem', fontWeight: 700 }}>
+                    SaaS Plan & Monthly Active Users (MAU)
+                  </h2>
+                  <p style={{ fontSize: '0.84rem', color: '#64748b' }}>
+                    Current Plan: <strong>{saasOverview.plan.name}</strong>
+                  </p>
+                </div>
+                <span
+                  style={{
+                    background: '#dcfce7',
+                    color: '#166534',
+                    padding: '0.25rem 0.7rem',
+                    borderRadius: '999px',
+                    fontSize: '0.78rem',
+                    fontWeight: 700,
+                  }}
+                >
+                  {saasOverview.plan.mau_used} / {saasOverview.plan.mau_limit.toLocaleString()} MAU
+                </span>
+              </div>
+
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                  gap: '0.85rem',
+                  marginTop: '0.75rem',
+                }}
+              >
+                <div style={{ background: '#f8fafc', padding: '0.9rem', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                  <div style={{ fontSize: '0.75rem', color: '#64748b' }}>Monthly Active Users</div>
+                  <div style={{ fontSize: '1.4rem', fontWeight: 700, color: '#0f172a' }}>
+                    {saasOverview.plan.mau_used}
+                  </div>
+                </div>
+                <div style={{ background: '#f8fafc', padding: '0.9rem', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                  <div style={{ fontSize: '0.75rem', color: '#64748b' }}>OAuth Applications</div>
+                  <div style={{ fontSize: '1.4rem', fontWeight: 700, color: '#0f172a' }}>
+                    {saasOverview.plan.total_clients}
+                  </div>
+                </div>
+                <div style={{ background: '#f8fafc', padding: '0.9rem', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                  <div style={{ fontSize: '0.75rem', color: '#64748b' }}>Issued SSO Sessions</div>
+                  <div style={{ fontSize: '1.4rem', fontWeight: 700, color: '#0f172a' }}>
+                    {saasOverview.plan.total_sessions}
+                  </div>
+                </div>
+              </div>
+            </section>
+          )}
+
+          {/* Email Verification Card */}
+          <section
+            style={{
+              background: '#ffffff',
+              border: '1px solid #e2e8f0',
+              borderRadius: '8px',
+              padding: '1.35rem',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <h2 style={{ fontSize: '1.1rem', fontWeight: 700 }}>
+                  Email Verification (OIDC <code>email_verified</code> Claim)
+                </h2>
+                <p style={{ fontSize: '0.85rem', color: '#64748b' }}>
+                  Status for <strong>{currentUser.email}</strong>:{' '}
+                  {currentUser.email_verified ? (
+                    <strong style={{ color: '#16a34a' }}>✓ Verified</strong>
+                  ) : (
+                    <strong style={{ color: '#d97706' }}>Unverified</strong>
+                  )}
+                </p>
+              </div>
+              {!currentUser.email_verified && !emailOtpSent && (
+                <button type="button" onClick={handleSendEmailOtp} style={{ fontSize: '0.85rem' }}>
+                  Send 6-Digit Email OTP
+                </button>
+              )}
+            </div>
+
+            {emailOtpSent && (
+              <form
+                onSubmit={handleConfirmEmailOtp}
+                style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-end', marginTop: '0.85rem' }}
+              >
+                <div style={{ flex: 1 }}>
+                  <label>Enter 6-Digit Email Verification Code</label>
+                  <input
+                    type="text"
+                    required
+                    maxLength={6}
+                    value={emailOtpCode}
+                    onChange={(e) => setEmailOtpCode(e.target.value)}
+                    style={{ marginBottom: 0 }}
+                  />
+                </div>
+                <button type="submit">Confirm OTP</button>
+              </form>
+            )}
+          </section>
+
           {/* Two-Factor Authentication Card */}
           <section
             style={{
@@ -1022,10 +1589,6 @@ if (!state.isAuthenticated) {
                     Copy
                   </button>
                 </p>
-                <p style={{ fontSize: '0.78rem', color: '#64748b', marginBottom: '0.75rem', wordBreak: 'break-all' }}>
-                  URI: <code>{mfaSetupData.otpauth_uri}</code>
-                </p>
-
                 {mfaSetupData.current_test_code && (
                   <p
                     style={{
@@ -1037,7 +1600,7 @@ if (!state.isAuthenticated) {
                       marginBottom: '0.75rem',
                     }}
                   >
-                    Current 30s TOTP Code (pre-filled for quick testing):{' '}
+                    Current 30s TOTP Code (pre-filled for testing):{' '}
                     <strong>{mfaSetupData.current_test_code}</strong>
                   </p>
                 )}
@@ -1082,14 +1645,14 @@ if (!state.isAuthenticated) {
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
               <div>
-                <h2 style={{ fontSize: '1.15rem', fontWeight: 700 }}>Active SSO & OAuth Sessions</h2>
+                <h2 style={{ fontSize: '1.15rem', fontWeight: 700 }}>Active Device Sessions</h2>
                 <p style={{ fontSize: '0.85rem', color: '#64748b' }}>
                   Devices currently signed into your account across soauth applications.
                 </p>
               </div>
               <button
                 type="button"
-                onClick={() => void loadSessions()}
+                onClick={() => void loadSecurityAndSaasOverview()}
                 style={{ background: '#f1f5f9', color: '#334155', border: '1px solid #cbd5e1', fontSize: '0.8rem' }}
               >
                 Refresh
@@ -1098,8 +1661,6 @@ if (!state.isAuthenticated) {
 
             {sessionsLoading ? (
               <p style={{ color: '#64748b', fontSize: '0.85rem' }}>Loading sessions...</p>
-            ) : sessions.length === 0 ? (
-              <p style={{ color: '#64748b', fontSize: '0.85rem' }}>No active sessions found.</p>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                 {sessions.map((sess) => (
@@ -1133,8 +1694,7 @@ if (!state.isAuthenticated) {
                         )}
                       </div>
                       <div style={{ color: '#64748b', fontSize: '0.78rem', marginTop: '0.2rem' }}>
-                        IP: {sess.ip_address ?? 'local'} · Signed in: {new Date(sess.auth_time).toLocaleString()} · Expires:{' '}
-                        {new Date(sess.expires_at).toLocaleDateString()}
+                        IP: {sess.ip_address ?? 'local'} · Signed in: {new Date(sess.auth_time).toLocaleString()}
                       </div>
                     </div>
 
@@ -1156,6 +1716,70 @@ if (!state.isAuthenticated) {
               </div>
             )}
           </section>
+
+          {/* Real-Time Security Audit Log Stream */}
+          {saasOverview && (
+            <section
+              style={{
+                background: '#ffffff',
+                border: '1px solid #e2e8f0',
+                borderRadius: '8px',
+                padding: '1.35rem',
+              }}
+            >
+              <h2 style={{ fontSize: '1.15rem', fontWeight: 700, marginBottom: '0.25rem' }}>
+                Security Audit Log Stream ({saasOverview.audit_logs.length})
+              </h2>
+              <p style={{ fontSize: '0.84rem', color: '#64748b', marginBottom: '1rem' }}>
+                Immutable trace of logins, token issuances, secret rotations, RBAC changes, and replay detections.
+              </p>
+
+              {saasOverview.audit_logs.length === 0 ? (
+                <p style={{ color: '#64748b', fontSize: '0.85rem' }}>No audit events recorded yet.</p>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: '340px', overflowY: 'auto' }}>
+                  {saasOverview.audit_logs.map((log) => (
+                    <div
+                      key={log.id}
+                      style={{
+                        padding: '0.65rem 0.85rem',
+                        borderRadius: '6px',
+                        border: '1px solid #e2e8f0',
+                        background: '#f8fafc',
+                        fontSize: '0.82rem',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        gap: '0.75rem',
+                      }}
+                    >
+                      <div>
+                        <span
+                          style={{
+                            fontWeight: 700,
+                            fontFamily: 'monospace',
+                            color:
+                              log.status === 'failure'
+                                ? '#dc2626'
+                                : log.status === 'warning'
+                                  ? '#d97706'
+                                  : '#0284c7',
+                            marginRight: '0.5rem',
+                          }}
+                        >
+                          [{log.event_type}]
+                        </span>
+                        <span style={{ color: '#1e293b' }}>{log.details}</span>
+                      </div>
+                      <span style={{ color: '#64748b', fontSize: '0.75rem', whiteSpace: 'nowrap' }}>
+                        {new Date(log.created_at).toLocaleTimeString()}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
         </div>
       )}
     </div>

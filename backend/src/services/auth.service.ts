@@ -9,6 +9,7 @@ import { clientRepository } from '../repositories/client.repo.js';
 import { userRepository } from '../repositories/user.repo.js';
 import { sessionAndTokenRepository } from '../repositories/session.repo.js';
 import { verifyTotpCode } from '../core/totp.js';
+import { saasService } from './saas.service.js';
 import {
   OAuthProtocolError,
   type AuthorizeRequestQuery,
@@ -116,6 +117,14 @@ export class AuthorizationService {
 
     const isPasswordValid = await verifySecretArgon2id(targetHash, params.passwordPlain);
     if (!user || !isPasswordValid) {
+      saasService.record({
+        eventType: 'auth.login.failed',
+        actorEmail: params.email,
+        clientId: params.clientId,
+        ipAddress: params.ipAddress,
+        status: 'failure',
+        details: `Failed password login attempt for ${params.email}`,
+      });
       throw new OAuthProtocolError('access_denied', 'Invalid email or password.', 401);
     }
 
@@ -124,6 +133,15 @@ export class AuthorizationService {
         throw new OAuthProtocolError('access_denied', 'MFA_REQUIRED', 401);
       }
       if (!user.mfa_secret_encrypted || !verifyTotpCode(user.mfa_secret_encrypted, params.totpCode)) {
+        saasService.record({
+          eventType: 'auth.mfa.failed',
+          actorUserId: user.id,
+          actorEmail: user.email,
+          clientId: params.clientId,
+          ipAddress: params.ipAddress,
+          status: 'failure',
+          details: `Invalid 6-digit TOTP MFA code for ${user.email}`,
+        });
         throw new OAuthProtocolError('access_denied', 'Invalid 6-digit MFA code.', 401);
       }
     }
@@ -140,6 +158,27 @@ export class AuthorizationService {
       user_agent: params.userAgent,
       expires_at: expiresAt,
     });
+
+    saasService.record({
+      eventType: 'auth.login.success',
+      actorUserId: user.id,
+      actorEmail: user.email,
+      clientId: params.clientId,
+      ipAddress: params.ipAddress,
+      status: 'success',
+      details: `User ${user.email} authenticated for client ${params.clientId}`,
+    });
+
+    const client = await clientRepository.findById(params.clientId);
+    if (client?.webhook_url) {
+      void saasService.dispatchWebhook(client, 'user.logged_in', {
+        user_id: user.id,
+        email: user.email,
+        role: user.role ?? 'member',
+        session_id: session.id,
+        ip_address: params.ipAddress,
+      });
+    }
 
     return { user, session, rawSessionToken };
   }

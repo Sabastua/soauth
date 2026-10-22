@@ -100,12 +100,30 @@ export async function submitResetPassword(token: string, newPassword: string): P
 
 export interface ClientAppItem {
   id: string;
+  owner_user_id?: string | null;
   app_name: string;
   redirect_uris: string[];
   allowed_scopes: string[];
   is_confidential: boolean;
   require_pkce: boolean;
+  logo_url?: string | null;
+  primary_color?: string | null;
+  app_website_url?: string | null;
+  privacy_policy_url?: string | null;
+  terms_of_service_url?: string | null;
+  webhook_url?: string | null;
+  webhook_secret?: string | null;
   created_at: string;
+}
+
+export interface ClientBrandingInfo {
+  client_id: string;
+  app_name: string;
+  logo_url: string | null;
+  primary_color: string;
+  app_website_url: string | null;
+  privacy_policy_url: string | null;
+  terms_of_service_url: string | null;
 }
 
 export interface NewClientResponse {
@@ -115,13 +133,22 @@ export interface NewClientResponse {
   redirect_uris: string[];
   allowed_scopes: string[];
   token_endpoint_auth_method: string;
+  webhook_secret?: string;
 }
 
 export async function fetchClients(): Promise<ClientAppItem[]> {
-  const response = await fetch(`${BACKEND_URL}/api/v1/clients`);
+  const response = await fetch(`${BACKEND_URL}/api/v1/clients`, {
+    credentials: 'include',
+  });
   if (!response.ok) {
     throw new Error('Failed to fetch registered clients');
   }
+  return response.json();
+}
+
+export async function fetchClientBranding(clientId: string): Promise<ClientBrandingInfo | null> {
+  const response = await fetch(`${BACKEND_URL}/api/v1/clients/${clientId}/branding`);
+  if (!response.ok) return null;
   return response.json();
 }
 
@@ -130,10 +157,14 @@ export async function registerClientApp(params: {
   redirect_uris: string[];
   allowed_scopes?: string[];
   token_endpoint_auth_method?: 'client_secret_post' | 'none';
+  logo_url?: string;
+  primary_color?: string;
+  webhook_url?: string;
 }): Promise<NewClientResponse> {
   const response = await fetch(`${BACKEND_URL}/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
     body: JSON.stringify(params),
   });
 
@@ -144,9 +175,121 @@ export async function registerClientApp(params: {
   return payload;
 }
 
+export async function updateClientSettings(
+  clientId: string,
+  patch: {
+    app_name?: string;
+    redirect_uris?: string[];
+    logo_url?: string | null;
+    primary_color?: string | null;
+    app_website_url?: string | null;
+    privacy_policy_url?: string | null;
+    terms_of_service_url?: string | null;
+    webhook_url?: string | null;
+    webhook_secret?: string | null;
+  },
+): Promise<ClientAppItem> {
+  const response = await fetch(`${BACKEND_URL}/api/v1/clients/${clientId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(patch),
+  });
+  const payload = await response.json();
+  if (!response.ok) {
+    throw new Error(payload.error_description ?? 'Failed to update application settings');
+  }
+  return payload;
+}
+
+export async function triggerTestWebhook(
+  clientId: string,
+): Promise<{ delivered: boolean; statusCode?: number; error?: string }> {
+  const response = await fetch(`${BACKEND_URL}/api/v1/clients/${clientId}/webhook-test`, {
+    method: 'POST',
+    credentials: 'include',
+  });
+  return response.json();
+}
+
+export interface AppDirectoryUser {
+  id: string;
+  email: string;
+  email_verified: boolean;
+  role: string;
+  is_mfa_enabled: boolean;
+  created_at: string;
+  last_login_at: string | null;
+  session_count: number;
+  active_sessions: number;
+}
+
+export async function fetchClientUsers(clientId: string): Promise<AppDirectoryUser[]> {
+  const response = await fetch(`${BACKEND_URL}/api/v1/clients/${clientId}/users`, {
+    credentials: 'include',
+  });
+  if (!response.ok) {
+    throw new Error('Failed to load application user directory');
+  }
+  return response.json();
+}
+
+export async function updateClientUser(
+  clientId: string,
+  userId: string,
+  patch: { role?: string; revoke_sessions?: boolean },
+): Promise<{ message: string; user_id: string; role: string }> {
+  const response = await fetch(`${BACKEND_URL}/api/v1/clients/${clientId}/users/${userId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(patch),
+  });
+  const payload = await response.json();
+  if (!response.ok) {
+    throw new Error(payload.error_description ?? 'Failed to update user');
+  }
+  return payload;
+}
+
+export interface AuditLogItem {
+  id: string;
+  event_type: string;
+  actor_user_id: string | null;
+  actor_email: string | null;
+  client_id: string | null;
+  ip_address: string | null;
+  status: 'success' | 'failure' | 'warning';
+  details: string;
+  created_at: string;
+}
+
+export interface SaasOverviewResponse {
+  plan: {
+    name: string;
+    mau_used: number;
+    mau_limit: number;
+    total_users: number;
+    total_clients: number;
+    total_sessions: number;
+  };
+  audit_logs: AuditLogItem[];
+}
+
+export async function fetchSaasOverview(): Promise<SaasOverviewResponse> {
+  const response = await fetch(`${BACKEND_URL}/api/v1/saas/overview`, {
+    credentials: 'include',
+  });
+  if (!response.ok) {
+    throw new Error('Failed to load SaaS analytics overview');
+  }
+  return response.json();
+}
+
 export async function deleteClientApp(id: string): Promise<void> {
   const response = await fetch(`${BACKEND_URL}/api/v1/clients/${id}`, {
     method: 'DELETE',
+    credentials: 'include',
   });
   if (!response.ok) {
     throw new Error('Failed to delete client');
@@ -168,6 +311,8 @@ export async function regenerateClientSecret(id: string): Promise<{ client_id: s
 export interface SessionUserInfo {
   id: string;
   email: string;
+  email_verified?: boolean;
+  role?: string;
   is_mfa_enabled: boolean;
   created_at?: string;
 }
@@ -192,6 +337,37 @@ export async function fetchCurrentSession(): Promise<{
   });
   if (!response.ok) return { authenticated: false };
   return response.json();
+}
+
+export async function sendEmailVerificationOtp(): Promise<{
+  message: string;
+  dev_otp_code?: string;
+}> {
+  const response = await fetch(`${BACKEND_URL}/api/v1/auth/verify-email/send`, {
+    method: 'POST',
+    credentials: 'include',
+  });
+  const payload = await response.json();
+  if (!response.ok) {
+    throw new Error(payload.error_description ?? 'Failed to send verification code');
+  }
+  return payload;
+}
+
+export async function confirmEmailVerificationOtp(
+  code: string,
+): Promise<{ email_verified: boolean; message: string }> {
+  const response = await fetch(`${BACKEND_URL}/api/v1/auth/verify-email/confirm`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ code }),
+  });
+  const payload = await response.json();
+  if (!response.ok) {
+    throw new Error(payload.error_description ?? 'Invalid verification code');
+  }
+  return payload;
 }
 
 export async function submitSsoConsent(params: {
@@ -312,5 +488,6 @@ export async function disableMfa(): Promise<{ is_mfa_enabled: boolean; message: 
   }
   return payload;
 }
+
 
 

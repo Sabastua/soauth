@@ -1,13 +1,18 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
+import { randomInt } from 'node:crypto';
 import {
   generateOpaqueToken,
   hashSecretArgon2id,
   sha256Hex,
 } from '../../core/crypto.js';
+import { createRateLimitHook } from '../../core/ratelimit.js';
 import { computeTotpCode, generateTotpSecret, verifyTotpCode } from '../../core/totp.js';
+import { redis } from '../../database/connection.js';
+import { clientRepository } from '../../repositories/client.repo.js';
 import { sessionAndTokenRepository } from '../../repositories/session.repo.js';
 import { userRepository } from '../../repositories/user.repo.js';
 import { authorizationService } from '../../services/auth.service.js';
+import { saasService } from '../../services/saas.service.js';
 import { OAuthProtocolError } from '../../types/oauth.types.js';
 
 interface SignUpBody {
@@ -29,6 +34,12 @@ interface ResetPasswordBody {
   token: string;
   new_password: string;
 }
+
+const authRateLimit = createRateLimitHook({
+  namespace: 'account_auth',
+  maxRequests: 15,
+  windowSeconds: 60,
+});
 
 async function resolveAuthenticatedSession(request: FastifyRequest) {
   const rawToken = request.cookies['soauth_sso_token'];
@@ -62,6 +73,8 @@ export async function registerAccountRoutes(app: FastifyInstance): Promise<void>
       user: {
         id: auth.user.id,
         email: auth.user.email,
+        email_verified: auth.user.email_verified ?? false,
+        role: auth.user.role ?? 'member',
         is_mfa_enabled: auth.user.is_mfa_enabled,
         created_at: auth.user.created_at,
       },
@@ -75,6 +88,7 @@ export async function registerAccountRoutes(app: FastifyInstance): Promise<void>
   app.post<{ Body: DirectLoginBody }>(
     '/api/v1/auth/login',
     {
+      preHandler: [authRateLimit],
       schema: {
         body: {
           type: 'object',
@@ -112,6 +126,8 @@ export async function registerAccountRoutes(app: FastifyInstance): Promise<void>
         user: {
           id: user.id,
           email: user.email,
+          email_verified: user.email_verified ?? false,
+          role: user.role ?? 'member',
           is_mfa_enabled: user.is_mfa_enabled,
         },
       });
@@ -129,11 +145,98 @@ export async function registerAccountRoutes(app: FastifyInstance): Promise<void>
         auth.session.id,
         'USER_LOGOUT',
       );
+      saasService.record({
+        eventType: 'auth.logout',
+        actorUserId: auth.user.id,
+        actorEmail: auth.user.email,
+        clientId: auth.session.client_id,
+        ipAddress: request.ip ?? null,
+        status: 'success',
+        details: `User ${auth.user.email} signed out`,
+      });
     }
     reply.clearCookie('soauth_sso_token', { path: '/' });
     reply.header('Cache-Control', 'no-store');
     return reply.status(200).send({ message: 'Signed out successfully.' });
   });
+
+  /**
+   * POST /api/v1/auth/verify-email/send
+   * Sends a 6-digit Email Verification OTP code via Resend (or console fallback).
+   */
+  app.post('/api/v1/auth/verify-email/send', async (request, reply) => {
+    const auth = await resolveAuthenticatedSession(request);
+    if (!auth) {
+      throw new OAuthProtocolError('access_denied', 'Authentication required.', 401);
+    }
+
+    const otpCode = String(randomInt(100000, 999999));
+    await redis.set(`soauth:email_otp:${auth.user.id}`, otpCode, 'EX', 900);
+
+    await saasService.sendTransactionalEmail({
+      to: auth.user.email,
+      subject: `${otpCode} is your soauth verification code`,
+      html: `<p>Your 6-digit verification code for <strong>soauth</strong> is: <strong>${otpCode}</strong> (expires in 15 minutes).</p>`,
+    });
+
+    reply.header('Cache-Control', 'no-store');
+    return reply.status(200).send({
+      message: `Verification code sent to ${auth.user.email}.`,
+      ...(process.env.NODE_ENV !== 'production' ? { dev_otp_code: otpCode } : {}),
+    });
+  });
+
+  /**
+   * POST /api/v1/auth/verify-email/confirm
+   * Confirms the 6-digit Email Verification OTP code and sets `email_verified = true`.
+   */
+  app.post<{ Body: { code: string } }>(
+    '/api/v1/auth/verify-email/confirm',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          required: ['code'],
+          properties: {
+            code: { type: 'string', minLength: 6, maxLength: 6 },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const auth = await resolveAuthenticatedSession(request);
+      if (!auth) {
+        throw new OAuthProtocolError('access_denied', 'Authentication required.', 401);
+      }
+
+      const expectedCode = await redis.get(`soauth:email_otp:${auth.user.id}`);
+      if (!expectedCode || expectedCode !== request.body.code.trim()) {
+        throw new OAuthProtocolError(
+          'invalid_request',
+          'Invalid or expired 6-digit email verification code.',
+          400,
+        );
+      }
+
+      await redis.del(`soauth:email_otp:${auth.user.id}`);
+      await userRepository.markEmailVerified(auth.user.id);
+
+      saasService.record({
+        eventType: 'user.email_verified',
+        actorUserId: auth.user.id,
+        actorEmail: auth.user.email,
+        ipAddress: request.ip ?? null,
+        status: 'success',
+        details: `Verified email ownership for ${auth.user.email}`,
+      });
+
+      reply.header('Cache-Control', 'no-store');
+      return reply.status(200).send({
+        email_verified: true,
+        message: 'Email address verified successfully!',
+      });
+    },
+  );
 
   /**
    * GET /api/v1/auth/sessions
@@ -243,6 +346,15 @@ export async function registerAccountRoutes(app: FastifyInstance): Promise<void>
       }
 
       await userRepository.enableMfa(auth.user.id, secret);
+      saasService.record({
+        eventType: 'auth.mfa.enabled',
+        actorUserId: auth.user.id,
+        actorEmail: auth.user.email,
+        ipAddress: request.ip ?? null,
+        status: 'success',
+        details: `Enabled TOTP 2FA for ${auth.user.email}`,
+      });
+
       reply.header('Cache-Control', 'no-store');
       return reply.status(200).send({
         is_mfa_enabled: true,
@@ -262,6 +374,15 @@ export async function registerAccountRoutes(app: FastifyInstance): Promise<void>
     }
 
     await userRepository.disableMfa(auth.user.id);
+    saasService.record({
+      eventType: 'auth.mfa.disabled',
+      actorUserId: auth.user.id,
+      actorEmail: auth.user.email,
+      ipAddress: request.ip ?? null,
+      status: 'warning',
+      details: `Disabled TOTP 2FA for ${auth.user.email}`,
+    });
+
     reply.header('Cache-Control', 'no-store');
     return reply.status(200).send({
       is_mfa_enabled: false,
@@ -276,6 +397,7 @@ export async function registerAccountRoutes(app: FastifyInstance): Promise<void>
   app.post<{ Body: SignUpBody }>(
     '/api/v1/auth/signup',
     {
+      preHandler: [authRateLimit],
       schema: {
         body: {
           type: 'object',
@@ -304,16 +426,42 @@ export async function registerAccountRoutes(app: FastifyInstance): Promise<void>
       const user = await userRepository.create({
         email: normalizedEmail,
         password_hash: passwordHash,
+        email_verified: false,
+        role: 'member',
         is_mfa_enabled: false,
         mfa_secret_encrypted: null,
         is_active: true,
       });
+
+      saasService.record({
+        eventType: 'auth.signup',
+        actorUserId: user.id,
+        actorEmail: user.email,
+        ipAddress: request.ip ?? null,
+        status: 'success',
+        details: `New user account registered: ${user.email}`,
+      });
+
+      // Notify any registered clients with configured webhooks
+      const clients = await clientRepository.listAll();
+      for (const c of clients) {
+        if (c.webhook_url) {
+          void saasService.dispatchWebhook(c, 'user.created', {
+            user_id: user.id,
+            email: user.email,
+            role: user.role ?? 'member',
+            created_at: user.created_at,
+          });
+        }
+      }
 
       reply.header('Cache-Control', 'no-store');
       return reply.status(201).send({
         user: {
           id: user.id,
           email: user.email,
+          email_verified: user.email_verified ?? false,
+          role: user.role ?? 'member',
           created_at: user.created_at,
         },
         message: 'Account created successfully. You may now log in.',
@@ -328,6 +476,7 @@ export async function registerAccountRoutes(app: FastifyInstance): Promise<void>
   app.post<{ Body: ForgotPasswordBody }>(
     '/api/v1/auth/forgot-password',
     {
+      preHandler: [authRateLimit],
       schema: {
         body: {
           type: 'object',
@@ -353,6 +502,12 @@ export async function registerAccountRoutes(app: FastifyInstance): Promise<void>
           user_id: user.id,
           token_hashed: tokenHash,
           expires_at: expiresAt,
+        });
+
+        await saasService.sendTransactionalEmail({
+          to: user.email,
+          subject: 'Reset your soauth password',
+          html: `<p>Use the following reset token to set a new password on <strong>soauth</strong>: <code>${rawResetToken}</code></p>`,
         });
       } else {
         // Equalize response timing to prevent user enumeration
@@ -415,6 +570,14 @@ export async function registerAccountRoutes(app: FastifyInstance): Promise<void>
         resetTokenRecord.user_id,
         'PASSWORD_RESET_COMPLETED',
       );
+
+      saasService.record({
+        eventType: 'auth.password_reset',
+        actorUserId: resetTokenRecord.user_id,
+        ipAddress: request.ip ?? null,
+        status: 'success',
+        details: 'Password reset completed and all prior sessions revoked',
+      });
 
       reply.header('Cache-Control', 'no-store');
       return reply.status(200).send({
