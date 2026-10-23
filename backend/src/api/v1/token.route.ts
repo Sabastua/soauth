@@ -26,7 +26,7 @@ export async function registerTokenRoutes(app: FastifyInstance): Promise<void> {
           properties: {
             grant_type: {
               type: 'string',
-              enum: ['authorization_code', 'refresh_token'],
+              enum: ['authorization_code', 'refresh_token', 'client_credentials'],
             },
             client_id: { type: 'string', format: 'uuid' },
             client_secret: { type: 'string', minLength: 16, maxLength: 512 },

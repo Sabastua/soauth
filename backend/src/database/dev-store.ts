@@ -82,6 +82,7 @@ export async function initializeDevMemoryStore(): Promise<void> {
     terms_of_service_url: null,
     webhook_url: null,
     webhook_secret: 'whsec_soauth_default_dev_secret_2026',
+    custom_claims_template: JSON.stringify({ plan: 'pro', tenant_tier: 'enterprise' }),
     created_at: new Date(),
     updated_at: new Date(),
   };
@@ -222,6 +223,7 @@ export async function initializeDevMemoryStore(): Promise<void> {
       terms_of_service_url: client.terms_of_service_url ?? null,
       webhook_url: client.webhook_url ?? null,
       webhook_secret: client.webhook_secret ?? `whsec_${randomUUID().replace(/-/g, '')}`,
+      custom_claims_template: client.custom_claims_template ?? null,
       created_at: new Date(),
       updated_at: new Date(),
     };

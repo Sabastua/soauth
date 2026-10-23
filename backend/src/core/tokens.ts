@@ -189,6 +189,10 @@ export class TokenCryptoManager {
     sessionId: string;
     scope: string;
     role?: string;
+    orgId?: string;
+    orgSlug?: string;
+    orgRole?: string;
+    customClaims?: Record<string, unknown>;
     audience?: string | string[];
     ttlSeconds?: number;
   }): Promise<{ token: string; expiresIn: number; jti: string }> {
@@ -198,7 +202,29 @@ export class TokenCryptoManager {
     const jti = randomUUID();
     const resolvedRole = params.role ?? 'member';
 
+    const safeCustomClaims: Record<string, unknown> = {};
+    if (params.customClaims) {
+      const reserved = new Set([
+        'iss',
+        'sub',
+        'aud',
+        'client_id',
+        'iat',
+        'exp',
+        'jti',
+        'sid',
+        'scope',
+        'token_use',
+      ]);
+      for (const [k, v] of Object.entries(params.customClaims)) {
+        if (!reserved.has(k)) {
+          safeCustomClaims[k] = v;
+        }
+      }
+    }
+
     const payload: AccessTokenPayload = {
+      ...safeCustomClaims,
       iss: this.issuer,
       sub: params.userId,
       aud: params.audience ?? params.clientId,
@@ -211,6 +237,10 @@ export class TokenCryptoManager {
       token_use: 'access',
       role: resolvedRole,
       roles: [resolvedRole],
+      ...(params.orgId !== undefined ? { org_id: params.orgId } : {}),
+      ...(params.orgSlug !== undefined ? { org_slug: params.orgSlug } : {}),
+      ...(params.orgRole !== undefined ? { org_role: params.orgRole } : {}),
+      ...(Object.keys(safeCustomClaims).length > 0 ? { custom_claims: safeCustomClaims } : {}),
     };
 
     const token = await new SignJWT(payload)
@@ -234,6 +264,10 @@ export class TokenCryptoManager {
     email?: string;
     emailVerified?: boolean;
     role?: string;
+    orgId?: string;
+    orgSlug?: string;
+    orgRole?: string;
+    customClaims?: Record<string, unknown>;
     ttlSeconds?: number;
   }): Promise<string> {
     const key = this.ensureKeyInitialized();
@@ -241,7 +275,18 @@ export class TokenCryptoManager {
     const expiresIn = params.ttlSeconds ?? 3600;
     const resolvedRole = params.role ?? 'member';
 
+    const safeCustomClaims: Record<string, unknown> = {};
+    if (params.customClaims) {
+      const reserved = new Set(['iss', 'sub', 'aud', 'iat', 'exp', 'auth_time', 'sid', 'at_hash', 'nonce']);
+      for (const [k, v] of Object.entries(params.customClaims)) {
+        if (!reserved.has(k)) {
+          safeCustomClaims[k] = v;
+        }
+      }
+    }
+
     const payload: IdTokenPayload = {
+      ...safeCustomClaims,
       iss: this.issuer,
       sub: params.userId,
       aud: params.clientId,
@@ -252,6 +297,10 @@ export class TokenCryptoManager {
       at_hash: computeOidcAtHash(params.accessToken),
       role: resolvedRole,
       roles: [resolvedRole],
+      ...(params.orgId !== undefined ? { org_id: params.orgId } : {}),
+      ...(params.orgSlug !== undefined ? { org_slug: params.orgSlug } : {}),
+      ...(params.orgRole !== undefined ? { org_role: params.orgRole } : {}),
+      ...(Object.keys(safeCustomClaims).length > 0 ? { custom_claims: safeCustomClaims } : {}),
       ...(params.nonce !== undefined ? { nonce: params.nonce } : {}),
       ...(params.email !== undefined
         ? { email: params.email, email_verified: params.emailVerified ?? true }

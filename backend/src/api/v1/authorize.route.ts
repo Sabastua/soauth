@@ -135,7 +135,9 @@ export async function registerAuthorizeRoutes(app: FastifyInstance): Promise<voi
   app.post<{
     Body: AuthorizeRequestQuery & {
       email: string;
-      password: string;
+      password?: string;
+      otp_code?: string;
+      passkey_credential_id?: string;
       consent_granted: boolean;
       mfa_code?: string;
     };
@@ -148,7 +150,6 @@ export async function registerAuthorizeRoutes(app: FastifyInstance): Promise<voi
           type: 'object',
           required: [
             'email',
-            'password',
             'consent_granted',
             'response_type',
             'client_id',
@@ -160,7 +161,9 @@ export async function registerAuthorizeRoutes(app: FastifyInstance): Promise<voi
           ],
           properties: {
             email: { type: 'string', format: 'email' },
-            password: { type: 'string', minLength: 8, maxLength: 256 },
+            password: { type: 'string', maxLength: 256 },
+            otp_code: { type: 'string', minLength: 6, maxLength: 6 },
+            passkey_credential_id: { type: 'string', maxLength: 512 },
             consent_granted: { type: 'boolean' },
             mfa_code: { type: 'string', minLength: 6, maxLength: 6 },
             response_type: { type: 'string', enum: ['code'] },
@@ -190,7 +193,11 @@ export async function registerAuthorizeRoutes(app: FastifyInstance): Promise<voi
 
       const { user, session, rawSessionToken } = await authorizationService.authenticateUser({
         email: request.body.email,
-        passwordPlain: request.body.password,
+        ...(request.body.password !== undefined ? { passwordPlain: request.body.password } : {}),
+        ...(request.body.otp_code !== undefined ? { otpCode: request.body.otp_code } : {}),
+        ...(request.body.passkey_credential_id !== undefined
+          ? { passkeyCredentialId: request.body.passkey_credential_id }
+          : {}),
         clientId: client.id,
         ...(request.body.mfa_code !== undefined ? { totpCode: request.body.mfa_code } : {}),
         ipAddress: request.ip ?? null,

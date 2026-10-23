@@ -44,6 +44,13 @@ export interface RevokeTokenOptions {
   tokenTypeHint?: 'access_token' | 'refresh_token';
 }
 
+export interface ClientCredentialsOptions {
+  issuerUrl: string;
+  clientId: string;
+  clientSecret: string;
+  scope?: string;
+}
+
 export interface OAuthTokens {
   access_token: string;
   token_type: string;
@@ -59,6 +66,10 @@ export interface UserInfo {
   email_verified?: boolean;
   role?: string;
   roles?: string[];
+  org_id?: string;
+  org_slug?: string;
+  org_role?: string;
+  custom_claims?: Record<string, unknown>;
   name?: string;
   updated_at?: number;
   [key: string]: unknown;
@@ -225,6 +236,38 @@ export async function refreshAccessToken(options: RefreshTokenOptions): Promise<
   const data = await res.json();
   if (!res.ok) {
     throw new Error(data.error_description ?? data.error ?? 'Token refresh failed');
+  }
+
+  return data as OAuthTokens;
+}
+
+/**
+ * Exchanges confidential client credentials or a scoped `soauth_live_...` API key
+ * for a machine-to-machine (M2M) RS256 Access Token (`grant_type=client_credentials`).
+ */
+export async function exchangeClientCredentials(
+  options: ClientCredentialsOptions,
+): Promise<OAuthTokens> {
+  const tokenUrl = `${options.issuerUrl.replace(/\/$/, '')}/token`;
+  const body = new URLSearchParams({
+    grant_type: 'client_credentials',
+    client_id: options.clientId,
+    client_secret: options.clientSecret,
+  });
+
+  if (options.scope) {
+    body.set('scope', options.scope);
+  }
+
+  const res = await fetch(tokenUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: body.toString(),
+  });
+
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error_description ?? data.error ?? 'M2M client_credentials token exchange failed');
   }
 
   return data as OAuthTokens;
@@ -517,6 +560,15 @@ export class SoAuthClient {
     if (user.role === expectedRole) return true;
     if (Array.isArray(user.roles) && user.roles.includes(expectedRole)) return true;
     return false;
+  }
+
+  /**
+   * Checks whether the authenticated user has a specific organization role (`org:admin`, `org:member`, `org:billing`).
+   */
+  public hasOrgRole(expectedOrgRole: string): boolean {
+    const user = this.state.user;
+    if (!user) return false;
+    return user.org_role === expectedOrgRole;
   }
 
   /**

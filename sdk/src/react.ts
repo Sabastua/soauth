@@ -20,25 +20,11 @@ export interface SoAuthContextValue extends SoAuthState {
   logout: (postLogoutRedirectUri?: string) => Promise<void>;
   getAccessToken: () => Promise<string | null>;
   hasRole: (expectedRole: string) => boolean;
+  hasOrgRole: (expectedOrgRole: string) => boolean;
 }
 
 /**
- * Creates Clerk-like React components and hooks (`<SoAuthProvider>`, `useSoAuth`, `<SignInButton>`, `<UserButton>`, `<SignedIn>`, `<SignedOut>`).
- *
- * Example:
- * ```tsx
- * import React from 'react';
- * import { createSoAuthReact } from '@soauth/sdk/react';
- *
- * export const {
- *   SoAuthProvider,
- *   useSoAuth,
- *   SignedIn,
- *   SignedOut,
- *   SignInButton,
- *   UserButton,
- * } = createSoAuthReact(React);
- * ```
+ * Creates Clerk-like React components and hooks (`<SoAuthProvider>`, `useSoAuth`, `<SignInButton>`, `<UserButton>`, `<OrganizationSwitcher>`, `<UserProfile>`, `<SignedIn>`, `<SignedOut>`).
  */
 export function createSoAuthReact(React: ReactLike) {
   const SoAuthContext = React.createContext<SoAuthContextValue | null>(null);
@@ -73,6 +59,7 @@ export function createSoAuthReact(React: ReactLike) {
         logout: (postLogoutRedirectUri?: string) => client.logout(postLogoutRedirectUri),
         getAccessToken: () => client.getAccessToken(),
         hasRole: (expectedRole: string) => client.hasRole(expectedRole),
+        hasOrgRole: (expectedOrgRole: string) => client.hasOrgRole(expectedOrgRole),
       }),
       [state, client],
     );
@@ -114,11 +101,11 @@ export function createSoAuthReact(React: ReactLike) {
         type: 'button',
         onClick: () => void loginWithRedirect(props.scope),
         style: {
-          background: '#0284c7',
-          color: '#ffffff',
-          border: 'none',
+          background: '#ffffff',
+          color: '#111827',
+          border: '1.5px solid #111827',
           padding: '0.6rem 1.15rem',
-          borderRadius: '6px',
+          borderRadius: '8px',
           fontWeight: 600,
           fontSize: '0.9rem',
           cursor: 'pointer',
@@ -149,9 +136,9 @@ export function createSoAuthReact(React: ReactLike) {
             width: '38px',
             height: '38px',
             borderRadius: '50%',
-            background: '#0284c7',
-            color: '#ffffff',
-            border: '2px solid #e0f2fe',
+            background: '#ffffff',
+            color: '#111827',
+            border: '1.5px solid #111827',
             fontWeight: 700,
             fontSize: '0.95rem',
             cursor: 'pointer',
@@ -171,11 +158,11 @@ export function createSoAuthReact(React: ReactLike) {
                 right: 0,
                 marginTop: '0.5rem',
                 background: '#ffffff',
-                border: '1px solid #e2e8f0',
-                borderRadius: '8px',
-                padding: '0.85rem',
-                minWidth: '220px',
-                boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)',
+                border: '1px solid #e5e7eb',
+                borderRadius: '10px',
+                padding: '0.9rem',
+                minWidth: '230px',
+                boxShadow: '0 10px 15px -3px rgba(0,0,0,0.06)',
                 zIndex: 50,
               },
             },
@@ -185,7 +172,7 @@ export function createSoAuthReact(React: ReactLike) {
                 style: {
                   fontSize: '0.85rem',
                   fontWeight: 600,
-                  color: '#0f172a',
+                  color: '#111827',
                   marginBottom: '0.2rem',
                   wordBreak: 'break-all',
                 },
@@ -197,11 +184,11 @@ export function createSoAuthReact(React: ReactLike) {
               {
                 style: {
                   fontSize: '0.72rem',
-                  color: '#16a34a',
+                  color: '#4b5563',
                   marginBottom: '0.75rem',
                 },
               },
-              '✓ Verified soauth Identity',
+              `Verified Identity (${user.org_slug ?? user.role ?? 'member'})`,
             ),
             React.createElement(
               'button',
@@ -210,7 +197,7 @@ export function createSoAuthReact(React: ReactLike) {
                 onClick: () => void logout(props.afterSignOutUrl),
                 style: {
                   width: '100%',
-                  background: '#fee2e2',
+                  background: '#ffffff',
                   color: '#991b1b',
                   border: '1px solid #fca5a5',
                   padding: '0.45rem 0.75rem',
@@ -227,6 +214,118 @@ export function createSoAuthReact(React: ReactLike) {
     );
   }
 
+  /**
+   * Feature 2: <OrganizationSwitcher /> drop-in React component for switching B2B tenant workspaces.
+   */
+  function OrganizationSwitcher(props: {
+    organizations?: Array<{ id: string; name: string; slug: string }>;
+    activeOrgId?: string;
+    onSwitchOrganization?: (orgId: string) => void;
+  }) {
+    const { user } = useSoAuth();
+    const currentSlug = user?.org_slug ?? 'acme-corp';
+    const currentRole = user?.org_role ?? 'org:admin';
+    const orgs = props.organizations ?? [
+      { id: user?.org_id ?? 'org_default', name: currentSlug, slug: currentSlug },
+    ];
+
+    return React.createElement(
+      'div',
+      {
+        style: {
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: '0.5rem',
+          background: '#ffffff',
+          border: '1px solid #e5e7eb',
+          borderRadius: '8px',
+          padding: '0.35rem 0.65rem',
+        },
+      },
+      React.createElement(
+        'span',
+        {
+          style: {
+            fontSize: '0.75rem',
+            fontWeight: 700,
+            color: '#111827',
+          },
+        },
+        'ORG:',
+      ),
+      React.createElement(
+        'select',
+        {
+          value: props.activeOrgId ?? user?.org_id ?? orgs[0]?.id,
+          onChange: (e: { target: { value: string } }) =>
+            props.onSwitchOrganization?.(e.target.value),
+          style: {
+            background: '#ffffff',
+            color: '#111827',
+            border: 'none',
+            fontSize: '0.82rem',
+            fontWeight: 600,
+            cursor: 'pointer',
+            outline: 'none',
+          },
+        },
+        ...orgs.map((o) =>
+          React.createElement('option', { key: o.id, value: o.id }, `${o.name} (${currentRole})`),
+        ),
+      ),
+    );
+  }
+
+  /**
+   * Feature 5: <UserProfile /> Self-Service End-User Account Management Widget.
+   */
+  function UserProfile() {
+    const { user, logout } = useSoAuth();
+    if (!user) return null;
+
+    return React.createElement(
+      'div',
+      {
+        style: {
+          background: '#ffffff',
+          border: '1px solid #e5e7eb',
+          borderRadius: '12px',
+          padding: '1.5rem',
+          color: '#111827',
+          maxWidth: '560px',
+        },
+      },
+      React.createElement(
+        'h3',
+        { style: { margin: '0 0 0.35rem 0', fontSize: '1.1rem', fontWeight: 700 } },
+        'Account Security & Profile',
+      ),
+      React.createElement(
+        'p',
+        { style: { margin: '0 0 1rem 0', fontSize: '0.84rem', color: '#4b5563' } },
+        `Signed in as ${user.email ?? user.sub} | Role: ${user.role ?? 'member'} | Org: ${user.org_slug ?? 'personal'}`,
+      ),
+      React.createElement(
+        'button',
+        {
+          type: 'button',
+          onClick: () => void logout(),
+          style: {
+            background: '#ffffff',
+            color: '#111827',
+            border: '1px solid #111827',
+            borderRadius: '8px',
+            padding: '0.5rem 1rem',
+            fontSize: '0.82rem',
+            fontWeight: 600,
+            cursor: 'pointer',
+          },
+        },
+        'Sign out of current session',
+      ),
+    );
+  }
+
   return {
     SoAuthProvider,
     useSoAuth,
@@ -234,5 +333,7 @@ export function createSoAuthReact(React: ReactLike) {
     SignedOut,
     SignInButton,
     UserButton,
+    OrganizationSwitcher,
+    UserProfile,
   };
 }

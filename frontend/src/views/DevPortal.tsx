@@ -5,24 +5,39 @@ import {
   type AppDirectoryUser,
   type ClientAppItem,
   type NewClientResponse,
+  type OrganizationItem,
+  type PasskeyItem,
   type SaasOverviewResponse,
+  type ScopedApiKeyItem,
   type SessionUserInfo,
   confirmEmailVerificationOtp,
+  createClientApiKey,
+  createOrganization,
   deleteClientApp,
+  deleteUserPasskey,
   disableMfa,
   enableMfa,
+  fetchClientApiKeys,
   fetchClientUsers,
   fetchClients,
   fetchCurrentSession,
   fetchSaasOverview,
+  fetchUserOrganizations,
+  fetchUserPasskeys,
   fetchUserSessions,
+  inviteOrganizationMember,
   regenerateClientSecret,
   registerClientApp,
+  registerUserPasskey,
+  removeOrganizationMember,
+  revokeClientApiKey,
   revokeUserSession,
   sendEmailVerificationOtp,
+  sendPasswordlessOtp,
   setupMfa,
   submitPortalLogin,
   submitPortalLogout,
+  switchActiveOrganization,
   triggerTestWebhook,
   updateClientSettings,
   updateClientUser,
@@ -36,18 +51,21 @@ export const DevPortal: React.FC<DevPortalProps> = ({ onBackToLogin }) => {
   // Auth state
   const [authChecking, setAuthChecking] = useState(true);
   const [currentUser, setCurrentUser] = useState<SessionUserInfo | null>(null);
+  const [portalAuthMode, setPortalAuthMode] = useState<'password' | 'otp' | 'passkey'>('password');
   const [loginEmail, setLoginEmail] = useState('admin@soauth.internal');
   const [loginPassword, setLoginPassword] = useState('SoAuthAdminPassword!2026');
+  const [loginOtpCode, setLoginOtpCode] = useState('');
+  const [loginOtpSent, setLoginOtpSent] = useState(false);
   const [loginMfaCode, setLoginMfaCode] = useState('');
   const [loginLoading, setLoginLoading] = useState(false);
 
-  // Navigation Tabs (4 SaaS Pillars)
-  const [activeTab, setActiveTab] = useState<'apps' | 'branding' | 'users' | 'security'>('apps');
+  // Navigation Tabs (5 SaaS Pillars)
+  const [activeTab, setActiveTab] = useState<'apps' | 'branding' | 'orgs' | 'users' | 'security'>('apps');
 
   // Clients & Quickstart state
   const [clients, setClients] = useState<ClientAppItem[]>([]);
   const [selectedClientId, setSelectedClientId] = useState<string>('');
-  const [snippetTab, setSnippetTab] = useState<'react' | 'nextjs' | 'vanilla'>('react');
+  const [snippetTab, setSnippetTab] = useState<'react' | 'nextjs' | 'm2m' | 'vanilla'>('react');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
@@ -63,22 +81,41 @@ export const DevPortal: React.FC<DevPortalProps> = ({ onBackToLogin }) => {
   const [createdSecretInfo, setCreatedSecretInfo] = useState<NewClientResponse | null>(null);
   const [revealedSecret, setRevealedSecret] = useState<{ clientId: string; secret: string } | null>(null);
 
-  // Branding & Webhook Editor state
+  // Feature 4: Scoped API Keys & M2M state
+  const [apiKeys, setApiKeys] = useState<ScopedApiKeyItem[]>([]);
+  const [newApiKeyName, setNewApiKeyName] = useState('');
+  const [newApiKeyScopes, setNewApiKeyScopes] = useState('openid profile email');
+  const [revealedApiKey, setRevealedApiKey] = useState<string | null>(null);
+
+  // Branding, Custom Claims & Webhook Editor state (Feature 6)
   const [brandLogoUrl, setBrandLogoUrl] = useState('');
-  const [brandPrimaryColor, setBrandPrimaryColor] = useState('#4f46e5');
+  const [brandPrimaryColor, setBrandPrimaryColor] = useState('#111827');
   const [brandWebsiteUrl, setBrandWebsiteUrl] = useState('');
   const [brandPrivacyUrl, setBrandPrivacyUrl] = useState('');
   const [brandTermsUrl, setBrandTermsUrl] = useState('');
   const [webhookUrl, setWebhookUrl] = useState('');
+  const [customClaimsTemplate, setCustomClaimsTemplate] = useState(
+    '{\n  "plan": "pro",\n  "tenant_tier": "enterprise",\n  "org_slug": "{{org.slug}}"\n}',
+  );
   const [savingSettings, setSavingSettings] = useState(false);
+
+  // Feature 2: Multi-Tenant Organizations & Team Invitations state
+  const [organizations, setOrganizations] = useState<OrganizationItem[]>([]);
+  const [activeOrgId, setActiveOrgId] = useState<string | null>(null);
+  const [newOrgName, setNewOrgName] = useState('');
+  const [newOrgSlug, setNewOrgSlug] = useState('');
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteRole, setInviteRole] = useState<'org:admin' | 'org:member' | 'org:billing'>('org:member');
 
   // Per-App User Directory & RBAC state
   const [appUsers, setAppUsers] = useState<AppDirectoryUser[]>([]);
   const [usersLoading, setUsersLoading] = useState(false);
 
-  // SaaS Usage, Audit Logs, Email Verification & 2FA state
+  // SaaS Usage, Audit Logs, Email Verification, Passkeys & 2FA state (Features 3 & 5)
   const [saasOverview, setSaasOverview] = useState<SaasOverviewResponse | null>(null);
   const [sessions, setSessions] = useState<ActiveSessionInfo[]>([]);
+  const [passkeys, setPasskeys] = useState<PasskeyItem[]>([]);
+  const [newPasskeyDeviceName, setNewPasskeyDeviceName] = useState('MacBook Pro Touch ID');
   const [sessionsLoading, setSessionsLoading] = useState(false);
   const [mfaSetupData, setMfaSetupData] = useState<{
     secret: string;
@@ -93,11 +130,35 @@ export const DevPortal: React.FC<DevPortalProps> = ({ onBackToLogin }) => {
   const syncBrandingFormFromClient = (client: ClientAppItem | undefined) => {
     if (!client) return;
     setBrandLogoUrl(client.logo_url ?? '');
-    setBrandPrimaryColor(client.primary_color ?? '#4f46e5');
+    setBrandPrimaryColor(client.primary_color ?? '#111827');
     setBrandWebsiteUrl(client.app_website_url ?? '');
     setBrandPrivacyUrl(client.privacy_policy_url ?? '');
     setBrandTermsUrl(client.terms_of_service_url ?? '');
     setWebhookUrl(client.webhook_url ?? '');
+    setCustomClaimsTemplate(
+      client.custom_claims_template ??
+        JSON.stringify({ plan: 'pro', tenant_tier: 'enterprise', org_slug: '{{org.slug}}' }, null, 2),
+    );
+  };
+
+  const loadApiKeys = async (clientId: string) => {
+    if (!clientId) return;
+    try {
+      const keys = await fetchClientApiKeys(clientId);
+      setApiKeys(keys);
+    } catch {
+      // Ignore API key load errors
+    }
+  };
+
+  const loadOrganizations = async () => {
+    try {
+      const data = await fetchUserOrganizations();
+      setOrganizations(data.organizations);
+      setActiveOrgId(data.active_org_id);
+    } catch {
+      // Ignore organization load errors
+    }
   };
 
   const loadClients = async () => {
@@ -110,6 +171,7 @@ export const DevPortal: React.FC<DevPortalProps> = ({ onBackToLogin }) => {
         setSelectedClientId(activeId);
         const found = data.find((c) => c.id === activeId) ?? data[0];
         syncBrandingFormFromClient(found);
+        void loadApiKeys(activeId);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load clients');
@@ -134,9 +196,14 @@ export const DevPortal: React.FC<DevPortalProps> = ({ onBackToLogin }) => {
   const loadSecurityAndSaasOverview = async () => {
     try {
       setSessionsLoading(true);
-      const [sessList, overview] = await Promise.all([fetchUserSessions(), fetchSaasOverview()]);
+      const [sessList, overview, pkList] = await Promise.all([
+        fetchUserSessions(),
+        fetchSaasOverview(),
+        fetchUserPasskeys(),
+      ]);
       setSessions(sessList);
       setSaasOverview(overview);
+      setPasskeys(pkList);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load security & SaaS overview');
     } finally {
@@ -150,6 +217,7 @@ export const DevPortal: React.FC<DevPortalProps> = ({ onBackToLogin }) => {
         if (res.authenticated && res.user) {
           setCurrentUser(res.user);
           void loadClients();
+          void loadOrganizations();
           void loadSecurityAndSaasOverview();
         }
       })
@@ -165,6 +233,7 @@ export const DevPortal: React.FC<DevPortalProps> = ({ onBackToLogin }) => {
     const client = clients.find((c) => c.id === selectedClientId);
     if (client) {
       syncBrandingFormFromClient(client);
+      void loadApiKeys(client.id);
       if (activeTab === 'users') {
         void loadAppUsers(client.id);
       }
@@ -190,19 +259,63 @@ export const DevPortal: React.FC<DevPortalProps> = ({ onBackToLogin }) => {
     window.location.assign(`${window.location.pathname}?${params.toString()}`);
   };
 
+  const handleSendPortalOtp = async () => {
+    setError(null);
+    try {
+      const res = await sendPasswordlessOtp(loginEmail.trim());
+      setLoginOtpSent(true);
+      if (res.dev_otp_code) {
+        setLoginOtpCode(res.dev_otp_code);
+        setSuccessMsg(`One-time code sent (Dev Sandbox Code: ${res.dev_otp_code})`);
+      } else {
+        setSuccessMsg(res.message);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to send code');
+    }
+  };
+
   const handlePortalLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+
+    if (portalAuthMode === 'otp' && !loginOtpSent) {
+      await handleSendPortalOtp();
+      return;
+    }
+
     setLoginLoading(true);
     try {
+      let passkeyCredentialId: string | undefined;
+      if (portalAuthMode === 'passkey') {
+        passkeyCredentialId = 'auto';
+        if (typeof window !== 'undefined' && window.PublicKeyCredential && navigator.credentials) {
+          try {
+            const challenge = new Uint8Array(32);
+            window.crypto.getRandomValues(challenge);
+            const assertion = (await navigator.credentials.get({
+              publicKey: { challenge, timeout: 30000, userVerification: 'preferred' },
+            })) as PublicKeyCredential | null;
+            if (assertion?.id) passkeyCredentialId = assertion.id;
+          } catch {
+            // Fallback to registered platform passkey lookup by email
+          }
+        }
+      }
+
       const res = await submitPortalLogin({
         email: loginEmail,
-        password: loginPassword,
+        ...(portalAuthMode === 'password' ? { password: loginPassword } : {}),
+        ...(portalAuthMode === 'otp' ? { otpCode: loginOtpCode } : {}),
+        ...(portalAuthMode === 'passkey' && passkeyCredentialId
+          ? { passkeyCredentialId }
+          : {}),
         ...(loginMfaCode ? { mfaCode: loginMfaCode } : {}),
       });
       setCurrentUser(res.user);
       setLoginMfaCode('');
-      await Promise.all([loadClients(), loadSecurityAndSaasOverview()]);
+      setLoginOtpSent(false);
+      await Promise.all([loadClients(), loadOrganizations(), loadSecurityAndSaasOverview()]);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed');
     } finally {
@@ -248,6 +361,168 @@ export const DevPortal: React.FC<DevPortalProps> = ({ onBackToLogin }) => {
     }
   };
 
+  const handleCreateApiKey = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedClientId) return;
+    setError(null);
+    try {
+      const scopes = newApiKeyScopes
+        .split(' ')
+        .map((s) => s.trim())
+        .filter(Boolean);
+      const res = await createClientApiKey(selectedClientId, {
+        name: newApiKeyName || 'Backend M2M Service Key',
+        scopes,
+      });
+      setRevealedApiKey(res.raw_key);
+      setNewApiKeyName('');
+      setSuccessMsg('Scoped M2M API Key generated.');
+      await loadApiKeys(selectedClientId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create API key');
+    }
+  };
+
+  const handleRevokeApiKey = async (keyId: string) => {
+    if (!selectedClientId) return;
+    try {
+      await revokeClientApiKey(selectedClientId, keyId);
+      setSuccessMsg('API key revoked.');
+      await loadApiKeys(selectedClientId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to revoke API key');
+    }
+  };
+
+  const handleCreateOrganization = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    try {
+      const org = await createOrganization({
+        name: newOrgName,
+        ...(newOrgSlug.trim() ? { slug: newOrgSlug.trim() } : {}),
+      });
+      setNewOrgName('');
+      setNewOrgSlug('');
+      setSuccessMsg(`Organization "${org.name}" (${org.slug}) created and set as active.`);
+      await loadOrganizations();
+      const session = await fetchCurrentSession();
+      if (session.user) setCurrentUser(session.user);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create organization');
+    }
+  };
+
+  const handleInviteOrgMember = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeOrgId) return;
+    setError(null);
+    try {
+      await inviteOrganizationMember(activeOrgId, {
+        email: inviteEmail,
+        role: inviteRole,
+      });
+      setInviteEmail('');
+      setSuccessMsg(`Invited ${inviteEmail} as ${inviteRole}.`);
+      await loadOrganizations();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to invite member');
+    }
+  };
+
+  const handleRemoveOrgMember = async (orgId: string, memberId: string) => {
+    try {
+      await removeOrganizationMember(orgId, memberId);
+      setSuccessMsg('Member removed from organization.');
+      await loadOrganizations();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to remove member');
+    }
+  };
+
+  const handleSwitchOrg = async (orgId: string) => {
+    try {
+      const res = await switchActiveOrganization(orgId);
+      setActiveOrgId(res.active_org_id);
+      setCurrentUser((prev) =>
+        prev
+          ? {
+              ...prev,
+              ...(res.org_id !== undefined ? { org_id: res.org_id } : {}),
+              ...(res.org_slug !== undefined ? { org_slug: res.org_slug } : {}),
+              ...(res.org_role !== undefined ? { org_role: res.org_role } : {}),
+            }
+          : prev,
+      );
+      setSuccessMsg(`Switched active organization context to ${res.org_slug ?? orgId}.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to switch organization');
+    }
+  };
+
+  const handleRegisterPasskey = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    try {
+      let credentialId: string | undefined;
+      if (
+        typeof window !== 'undefined' &&
+        window.PublicKeyCredential &&
+        navigator.credentials &&
+        currentUser
+      ) {
+        try {
+          const challenge = new Uint8Array(32);
+          window.crypto.getRandomValues(challenge);
+          const userIdBytes = new TextEncoder().encode(currentUser.id);
+          const created = (await navigator.credentials.create({
+            publicKey: {
+              challenge,
+              rp: { name: 'soauth Identity Platform', id: window.location.hostname },
+              user: {
+                id: userIdBytes,
+                name: currentUser.email,
+                displayName: currentUser.email,
+              },
+              pubKeyCredParams: [
+                { type: 'public-key', alg: -7 },
+                { type: 'public-key', alg: -257 },
+              ],
+              authenticatorSelection: {
+                userVerification: 'preferred',
+              },
+              timeout: 30000,
+            },
+          })) as PublicKeyCredential | null;
+          if (created?.id) {
+            credentialId = created.id;
+          }
+        } catch {
+          // If browser WebAuthn dialog is cancelled or unavailable in headless preview, register platform passkey credential
+        }
+      }
+
+      const pk = await registerUserPasskey({
+        device_name: newPasskeyDeviceName || 'Platform Biometric Passkey',
+        ...(credentialId ? { credential_id: credentialId } : {}),
+      });
+      setPasskeys((prev) => [...prev, pk]);
+      setSuccessMsg(`Registered Passkey "${pk.device_name}" for passwordless biometric login.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to register passkey');
+    }
+  };
+
+  const handleDeletePasskey = async (id: string) => {
+    try {
+      await deleteUserPasskey(id);
+      setPasskeys((prev) => prev.filter((p) => p.id !== id));
+      setSuccessMsg('Passkey removed.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to remove passkey');
+    }
+  };
+
   const handleSaveBrandingAndWebhooks = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedClientId) return;
@@ -256,13 +531,14 @@ export const DevPortal: React.FC<DevPortalProps> = ({ onBackToLogin }) => {
     try {
       await updateClientSettings(selectedClientId, {
         logo_url: brandLogoUrl.trim() || null,
-        primary_color: brandPrimaryColor.trim() || '#4f46e5',
+        primary_color: brandPrimaryColor.trim() || '#111827',
         app_website_url: brandWebsiteUrl.trim() || null,
         privacy_policy_url: brandPrivacyUrl.trim() || null,
         terms_of_service_url: brandTermsUrl.trim() || null,
         webhook_url: webhookUrl.trim() || null,
+        custom_claims_template: customClaimsTemplate.trim() || null,
       });
-      setSuccessMsg('Custom branding & webhook settings saved!');
+      setSuccessMsg('Custom branding, JWT claims template & webhook settings saved.');
       await loadClients();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save settings');
@@ -277,7 +553,7 @@ export const DevPortal: React.FC<DevPortalProps> = ({ onBackToLogin }) => {
     try {
       const res = await triggerTestWebhook(selectedClientId);
       if (res.delivered) {
-        setSuccessMsg(`HMAC-signed test webhook delivered (HTTP ${res.statusCode})!`);
+        setSuccessMsg(`HMAC-signed test webhook delivered (HTTP ${res.statusCode}).`);
       } else {
         setError(`Webhook delivery failed: ${res.error ?? `HTTP ${res.statusCode}`}`);
       }
@@ -385,7 +661,7 @@ export const DevPortal: React.FC<DevPortalProps> = ({ onBackToLogin }) => {
       setCurrentUser((prev) => (prev ? { ...prev, is_mfa_enabled: true } : prev));
       setMfaSetupData(null);
       setMfaVerifyCode('');
-      setSuccessMsg('Two-Factor Authentication (TOTP) enabled on your account!');
+      setSuccessMsg('Two-Factor Authentication (TOTP) enabled on your account.');
       await loadSecurityAndSaasOverview();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to verify 2FA code');
@@ -425,7 +701,7 @@ export const DevPortal: React.FC<DevPortalProps> = ({ onBackToLogin }) => {
 
   const copyToClipboard = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
-    setSuccessMsg(`Copied ${label} to clipboard!`);
+    setSuccessMsg(`Copied ${label} to clipboard.`);
     setTimeout(() => setSuccessMsg(null), 3000);
   };
 
@@ -473,8 +749,8 @@ export const DevPortal: React.FC<DevPortalProps> = ({ onBackToLogin }) => {
             <h1 style={{ fontSize: '1.65rem', fontWeight: 800, letterSpacing: '-0.02em', marginBottom: '0.35rem', color: '#111827' }}>
               Sign in to Developer Console
             </h1>
-            <p style={{ fontSize: '0.9rem', color: '#6b7280', marginBottom: '1.5rem', lineHeight: 1.5 }}>
-              Manage your multi-tenant OAuth 2.1 apps, white-label login branding, RBAC roles, and webhooks.
+            <p style={{ fontSize: '0.9rem', color: '#6b7280', marginBottom: '1.25rem', lineHeight: 1.5 }}>
+              Manage your multi-tenant OAuth 2.1 apps, organizations, passkeys, M2M keys, and custom JWT claims.
             </p>
 
             {error && (
@@ -488,6 +764,28 @@ export const DevPortal: React.FC<DevPortalProps> = ({ onBackToLogin }) => {
               </div>
             )}
 
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.4rem', marginBottom: '1rem' }}>
+              {(['password', 'otp', 'passkey'] as const).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => {
+                    setPortalAuthMode(mode);
+                    setError(null);
+                  }}
+                  style={{
+                    padding: '0.45rem 0.5rem',
+                    fontSize: '0.78rem',
+                    borderColor: portalAuthMode === mode ? '#111827' : '#d1d5db',
+                    fontWeight: portalAuthMode === mode ? 700 : 500,
+                  }}
+                >
+                  {mode === 'password' ? 'Password' : mode === 'otp' ? 'Email Code' : 'Passkey'}
+                </button>
+              ))}
+            </div>
+
             <form onSubmit={handlePortalLogin}>
               <div>
                 <label htmlFor="portal-email">Developer Email</label>
@@ -499,29 +797,63 @@ export const DevPortal: React.FC<DevPortalProps> = ({ onBackToLogin }) => {
                   onChange={(e) => setLoginEmail(e.target.value)}
                 />
               </div>
-              <div>
-                <label htmlFor="portal-password">Password</label>
-                <input
-                  id="portal-password"
-                  type="password"
-                  required
-                  value={loginPassword}
-                  onChange={(e) => setLoginPassword(e.target.value)}
-                />
-              </div>
-              <div>
-                <label htmlFor="portal-mfa">2FA Authenticator Code (if enabled)</label>
-                <input
-                  id="portal-mfa"
-                  type="text"
-                  inputMode="numeric"
-                  placeholder="Optional 6-digit TOTP code"
-                  value={loginMfaCode}
-                  onChange={(e) => setLoginMfaCode(e.target.value)}
-                />
-              </div>
+
+              {portalAuthMode === 'password' && (
+                <>
+                  <div>
+                    <label htmlFor="portal-password">Password</label>
+                    <input
+                      id="portal-password"
+                      type="password"
+                      required
+                      value={loginPassword}
+                      onChange={(e) => setLoginPassword(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="portal-mfa">2FA Authenticator Code (if enabled)</label>
+                    <input
+                      id="portal-mfa"
+                      type="text"
+                      inputMode="numeric"
+                      placeholder="Optional 6-digit TOTP code"
+                      value={loginMfaCode}
+                      onChange={(e) => setLoginMfaCode(e.target.value)}
+                    />
+                  </div>
+                </>
+              )}
+
+              {portalAuthMode === 'otp' && loginOtpSent && (
+                <div>
+                  <label htmlFor="portal-otp">6-Digit Email Sign-In Code</label>
+                  <input
+                    id="portal-otp"
+                    type="text"
+                    required
+                    maxLength={6}
+                    value={loginOtpCode}
+                    onChange={(e) => setLoginOtpCode(e.target.value)}
+                  />
+                </div>
+              )}
+
+              {portalAuthMode === 'passkey' && (
+                <div style={{ padding: '0.75rem', border: '1px solid #e5e7eb', borderRadius: '8px', background: '#ffffff', fontSize: '0.8rem', color: '#4b5563' }}>
+                  Sign in with a registered WebAuthn biometric passkey linked to your email address.
+                </div>
+              )}
+
               <button type="submit" className="btn-secondary" disabled={loginLoading} style={{ width: '100%', marginTop: '0.25rem', borderColor: '#111827' }}>
-                {loginLoading ? 'Signing in...' : 'Open Cloud Dashboard'}
+                {loginLoading
+                  ? 'Signing in...'
+                  : portalAuthMode === 'otp'
+                    ? loginOtpSent
+                      ? 'Verify Code & Open Dashboard'
+                      : 'Send 6-Digit Email Code'
+                    : portalAuthMode === 'passkey'
+                      ? 'Sign in with Passkey'
+                      : 'Open Cloud Dashboard'}
               </button>
             </form>
 
@@ -535,6 +867,7 @@ export const DevPortal: React.FC<DevPortalProps> = ({ onBackToLogin }) => {
                 className="btn-secondary"
                 style={{ flex: 1, fontSize: '0.8rem' }}
                 onClick={() => {
+                  setPortalAuthMode('password');
                   setLoginEmail('admin@soauth.internal');
                   setLoginPassword('SoAuthAdminPassword!2026');
                 }}
@@ -584,26 +917,26 @@ export const DevPortal: React.FC<DevPortalProps> = ({ onBackToLogin }) => {
               Drop-in authentication built for modern apps.
             </h2>
             <p style={{ color: '#4b5563', fontSize: '0.98rem', lineHeight: 1.6, maxWidth: '480px' }}>
-              Give your users a 1-click Google &amp; Clerk-grade login experience while retaining 100% control over RS256 JWTs, PKCE S256 security, and multi-tenant RBAC.
+              Give your users a 1-click Google &amp; Clerk-grade login experience with Passwordless OTP, WebAuthn Passkeys, B2B Organizations, M2M API Keys, and Custom JWT Claims.
             </p>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginTop: '2rem' }}>
               {[
                 {
-                  title: '1-Click SSO Chooser',
-                  desc: 'Seamless HttpOnly session cookies for instant "Continue as [User]" across apps.',
+                  title: 'Passwordless & Passkeys',
+                  desc: 'Sign in with 6-digit email codes, WebAuthn biometrics, or 1-click SSO cookies.',
                 },
                 {
-                  title: 'White-Label Branding',
-                  desc: 'Customize per-client logos, brand colors, and legal links in real time.',
+                  title: 'B2B Organizations',
+                  desc: 'Multi-tenant workspaces, team invitations, and org_id/org_role in RS256 JWTs.',
                 },
                 {
-                  title: 'RBAC in RS256 JWTs',
-                  desc: 'Assign admin, billing, or member roles embedded directly in ID & Access tokens.',
+                  title: 'M2M & Scoped API Keys',
+                  desc: 'Issue client_credentials tokens and soauth_live_ keys for backend microservices.',
                 },
                 {
-                  title: 'Signed HMAC Webhooks',
-                  desc: 'Sync user signups and logins to your backend with X-SoAuth-Signature.',
+                  title: 'Custom JWT Templates',
+                  desc: 'Inject dynamic custom claims ({{org.slug}}, {{user.role}}) into ID & Access tokens.',
                 },
               ].map((feat) => (
                 <div
@@ -635,10 +968,10 @@ export const DevPortal: React.FC<DevPortalProps> = ({ onBackToLogin }) => {
               color: '#111827',
             }}
           >
-            <div style={{ color: '#6b7280', marginBottom: '0.35rem' }}>// 5-line React integration (@soauth/sdk/react)</div>
+            <div style={{ color: '#6b7280', marginBottom: '0.35rem' }}>// React integration (@soauth/sdk/react)</div>
             <div>{`<SoAuthProvider issuerUrl="${BACKEND_URL}" clientId="your_client_id">`}</div>
             <div style={{ paddingLeft: '1rem' }}>{`<SignedOut><SignInButton /></SignedOut>`}</div>
-            <div style={{ paddingLeft: '1rem' }}>{`<SignedIn><UserButton /></SignedIn>`}</div>
+            <div style={{ paddingLeft: '1rem' }}>{`<SignedIn><OrganizationSwitcher /><UserButton /></SignedIn>`}</div>
             <div>{`</SoAuthProvider>`}</div>
           </div>
         </div>
@@ -649,6 +982,7 @@ export const DevPortal: React.FC<DevPortalProps> = ({ onBackToLogin }) => {
   const activeClient = clients.find((c) => c.id === selectedClientId) ?? clients[0];
   const sampleClientId = activeClient?.id ?? 'client_default_test';
   const sampleRedirectUri = activeClient?.redirect_uris[0] ?? `${window.location.origin}/callback`;
+  const activeOrg = organizations.find((o) => o.id === activeOrgId) ?? organizations[0];
 
   const reactSnippet = `import React from 'react';
 import { createSoAuthReact } from '@soauth/sdk/react';
@@ -660,6 +994,8 @@ export const {
   SignedOut,
   SignInButton,
   UserButton,
+  OrganizationSwitcher,
+  UserProfile,
 } = createSoAuthReact(React);
 
 export function App() {
@@ -674,6 +1010,7 @@ export function App() {
           <SignInButton label="Sign in with soauth" />
         </SignedOut>
         <SignedIn>
+          <OrganizationSwitcher />
           <UserButton afterSignOutUrl={window.location.origin} />
         </SignedIn>
       </header>
@@ -698,6 +1035,18 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   ],
 });`;
 
+  const m2mSnippet = `import { exchangeClientCredentials } from '@soauth/sdk';
+
+// Machine-to-Machine (M2M) Backend Service Token Exchange
+const tokens = await exchangeClientCredentials({
+  issuerUrl: '${BACKEND_URL}',
+  clientId: '${sampleClientId}',
+  clientSecret: process.env.SOAUTH_API_KEY_OR_SECRET!, // e.g. soauth_live_...
+  scope: 'openid profile email',
+});
+
+console.log('M2M RS256 Access Token:', tokens.access_token);`;
+
   const vanillaSnippet = `import { SoAuthClient } from '@soauth/sdk';
 
 const auth = new SoAuthClient({
@@ -711,11 +1060,17 @@ const state = await auth.initialize();
 if (!state.isAuthenticated) {
   await auth.loginWithRedirect();
 } else {
-  console.log('User:', state.user?.email, 'Is Admin?', auth.hasRole('admin'));
+  console.log('User:', state.user?.email, 'Org Role:', state.user?.org_role);
 }`;
 
   const currentSnippet =
-    snippetTab === 'react' ? reactSnippet : snippetTab === 'nextjs' ? nextjsSnippet : vanillaSnippet;
+    snippetTab === 'react'
+      ? reactSnippet
+      : snippetTab === 'nextjs'
+        ? nextjsSnippet
+        : snippetTab === 'm2m'
+          ? m2mSnippet
+          : vanillaSnippet;
 
   return (
     <div className="saas-shell">
@@ -768,14 +1123,24 @@ if (!state.isAuthenticated) {
               className={`saas-nav-btn ${activeTab === 'apps' ? 'active' : ''}`}
               onClick={() => setActiveTab('apps')}
             >
-              <span>Applications &amp; SDK ({clients.length})</span>
+              <span>Apps, M2M Keys &amp; SDK ({clients.length})</span>
             </button>
             <button
               type="button"
               className={`saas-nav-btn ${activeTab === 'branding' ? 'active' : ''}`}
               onClick={() => setActiveTab('branding')}
             >
-              <span>Branding &amp; Webhooks</span>
+              <span>Branding, Claims &amp; Webhooks</span>
+            </button>
+            <button
+              type="button"
+              className={`saas-nav-btn ${activeTab === 'orgs' ? 'active' : ''}`}
+              onClick={() => {
+                setActiveTab('orgs');
+                void loadOrganizations();
+              }}
+            >
+              <span>Organizations &amp; Teams ({organizations.length})</span>
             </button>
             <button
               type="button"
@@ -795,7 +1160,7 @@ if (!state.isAuthenticated) {
                 void loadSecurityAndSaasOverview();
               }}
             >
-              <span>MAU, Audit &amp; 2FA</span>
+              <span>Passkeys, Profile &amp; Audit</span>
             </button>
           </nav>
 
@@ -844,7 +1209,7 @@ if (!state.isAuthenticated) {
                 {currentUser.email}
               </div>
               <div style={{ fontSize: '0.7rem', color: '#6b7280' }}>
-                Role: {currentUser.role ?? 'member'}
+                Org: {currentUser.org_slug ?? 'acme-corp'} ({currentUser.org_role ?? 'org:admin'})
               </div>
             </div>
           </div>
@@ -864,22 +1229,60 @@ if (!state.isAuthenticated) {
       <div className="saas-workspace">
         <header className="saas-topbar">
           <div>
-            <h1 style={{ fontSize: '1.25rem', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.02em' }}>
-              {activeTab === 'apps' && 'Applications & Drop-In SDK Quickstart'}
-              {activeTab === 'branding' && 'White-Label Login Branding & Signed Webhooks'}
+            <h1 style={{ fontSize: '1.25rem', fontWeight: 800, color: '#111827', letterSpacing: '-0.02em' }}>
+              {activeTab === 'apps' && 'Applications, M2M Keys & SDK Quickstart'}
+              {activeTab === 'branding' && 'Login Branding, Custom JWT Claims & Webhooks'}
+              {activeTab === 'orgs' && 'Multi-Tenant Organizations & Team Invitations'}
               {activeTab === 'users' && 'Application User Directory & RBAC Roles'}
-              {activeTab === 'security' && 'SaaS MAU Metering, Security Audit Logs & 2FA'}
+              {activeTab === 'security' && 'Self-Service Account Profile, Passkeys, 2FA & Audit'}
             </h1>
-            <p style={{ fontSize: '0.8rem', color: '#64748b' }}>
+            <p style={{ fontSize: '0.8rem', color: '#6b7280' }}>
               OIDC Issuer: <code>{BACKEND_URL}</code>
             </p>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
-            <span className={currentUser.is_mfa_enabled ? 'pill pill-green' : 'pill pill-slate'}>
+            {organizations.length > 0 && (
+              <div
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.45rem',
+                  background: '#ffffff',
+                  border: '1px solid #d1d5db',
+                  borderRadius: '8px',
+                  padding: '0.28rem 0.6rem',
+                }}
+              >
+                <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase' }}>
+                  Org
+                </span>
+                <select
+                  value={activeOrg?.id ?? ''}
+                  onChange={(e) => void handleSwitchOrg(e.target.value)}
+                  style={{
+                    width: 'auto',
+                    border: 'none',
+                    background: '#ffffff',
+                    color: '#111827',
+                    fontSize: '0.8rem',
+                    fontWeight: 700,
+                    padding: '0.1rem 0.25rem',
+                    boxShadow: 'none',
+                  }}
+                >
+                  {organizations.map((org) => (
+                    <option key={org.id} value={org.id}>
+                      {org.name} ({org.slug})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            <span className="pill">
               {currentUser.is_mfa_enabled ? '2FA Protected' : '2FA Off'}
             </span>
-            <span className="pill pill-indigo">Role: {currentUser.role ?? 'member'}</span>
+            <span className="pill">Role: {currentUser.role ?? 'member'}</span>
             {onBackToLogin && (
               <button
                 type="button"
@@ -892,7 +1295,8 @@ if (!state.isAuthenticated) {
             )}
             <button
               type="button"
-              style={{ padding: '0.5rem 0.95rem', fontSize: '0.82rem' }}
+              className="btn-secondary"
+              style={{ padding: '0.5rem 0.95rem', fontSize: '0.82rem', borderColor: '#111827' }}
               onClick={() => {
                 setActiveTab('apps');
                 setShowCreateModal(true);
@@ -912,7 +1316,7 @@ if (!state.isAuthenticated) {
             </div>
           )}
 
-          {/* TAB 1: APPLICATIONS & SDK QUICKSTART */}
+          {/* TAB 1: APPLICATIONS, M2M KEYS & SDK QUICKSTART */}
           {activeTab === 'apps' && (
             <>
               {createdSecretInfo && (
@@ -1133,7 +1537,7 @@ if (!state.isAuthenticated) {
                             style={{ fontSize: '0.76rem', padding: '0.38rem 0.65rem' }}
                             onClick={() => setSelectedClientId(client.id)}
                           >
-                            Use in Quickstart
+                            Select App
                           </button>
                           <button
                             type="button"
@@ -1144,7 +1548,7 @@ if (!state.isAuthenticated) {
                               setActiveTab('branding');
                             }}
                           >
-                            Customize Login
+                            Claims &amp; Branding
                           </button>
                           {client.is_confidential && (
                             <button
@@ -1171,7 +1575,133 @@ if (!state.isAuthenticated) {
                 )}
               </section>
 
-              {/* Clerk-style Interactive SDK Quickstart */}
+              {/* FEATURE 4: SCOPED M2M API KEYS & CLIENT_CREDENTIALS GRANT */}
+              {activeClient && (
+                <section className="surface-card">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
+                    <div>
+                      <h3 style={{ fontSize: '1.08rem', fontWeight: 700 }}>
+                        Scoped Machine-to-Machine (M2M) API Keys ({activeClient.app_name})
+                      </h3>
+                      <p style={{ fontSize: '0.82rem', color: '#6b7280' }}>
+                        Issue scoped <code>soauth_live_...</code> keys for backend microservices using <code>grant_type=client_credentials</code> or RFC 7662 token introspection.
+                      </p>
+                    </div>
+                  </div>
+
+                  {revealedApiKey && (
+                    <div
+                      style={{
+                        background: '#ffffff',
+                        border: '1px solid #111827',
+                        borderRadius: '10px',
+                        padding: '1rem',
+                        marginBottom: '1rem',
+                      }}
+                    >
+                      <div style={{ fontSize: '0.85rem', fontWeight: 700, marginBottom: '0.3rem' }}>
+                        Copy Scoped API Key Now
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                        <code>{revealedApiKey}</code>
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          style={{ padding: '0.2rem 0.55rem', fontSize: '0.75rem' }}
+                          onClick={() => copyToClipboard(revealedApiKey, 'Scoped API Key')}
+                        >
+                          Copy Key
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  <form
+                    onSubmit={handleCreateApiKey}
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '1fr 1fr auto',
+                      gap: '0.75rem',
+                      alignItems: 'end',
+                      marginBottom: '1rem',
+                    }}
+                  >
+                    <div>
+                      <label>API Key Name</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="Billing Worker Service"
+                        value={newApiKeyName}
+                        onChange={(e) => setNewApiKeyName(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label>Allowed Scopes (space-separated)</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="openid profile email"
+                        value={newApiKeyScopes}
+                        onChange={(e) => setNewApiKeyScopes(e.target.value)}
+                      />
+                    </div>
+                    <button
+                      type="submit"
+                      className="btn-secondary"
+                      style={{ borderColor: '#111827', height: '40px' }}
+                    >
+                      + Issue M2M Key
+                    </button>
+                  </form>
+
+                  {apiKeys.length === 0 ? (
+                    <p style={{ fontSize: '0.82rem', color: '#6b7280' }}>
+                      No scoped M2M API keys issued for this application yet.
+                    </p>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                      {apiKeys.map((k) => (
+                        <div
+                          key={k.id}
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            padding: '0.75rem 1rem',
+                            border: '1px solid #e5e7eb',
+                            borderRadius: '8px',
+                            background: '#ffffff',
+                            flexWrap: 'wrap',
+                            gap: '0.5rem',
+                          }}
+                        >
+                          <div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                              <strong style={{ fontSize: '0.88rem', color: '#111827' }}>{k.name}</strong>
+                              <code>{k.key_prefix}</code>
+                            </div>
+                            <div style={{ fontSize: '0.76rem', color: '#6b7280', marginTop: '0.15rem' }}>
+                              Scopes: <code>{k.scopes.join(' ')}</code> · Created: {new Date(k.created_at).toLocaleDateString()}
+                              {k.last_used_at ? ` · Last used: ${new Date(k.last_used_at).toLocaleTimeString()}` : ''}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            className="btn-danger"
+                            style={{ fontSize: '0.75rem', padding: '0.35rem 0.65rem' }}
+                            onClick={() => void handleRevokeApiKey(k.id)}
+                          >
+                            Revoke Key
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </section>
+              )}
+
+              {/* Interactive SDK Quickstart */}
               <section className="surface-card">
                 <div
                   style={{
@@ -1192,7 +1722,7 @@ if (!state.isAuthenticated) {
                     </p>
                   </div>
                   <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
-                    {(['react', 'nextjs', 'vanilla'] as const).map((tab) => (
+                    {(['react', 'nextjs', 'm2m', 'vanilla'] as const).map((tab) => (
                       <button
                         key={tab}
                         type="button"
@@ -1204,7 +1734,13 @@ if (!state.isAuthenticated) {
                           borderColor: snippetTab === tab ? '#111827' : '#d1d5db',
                         }}
                       >
-                        {tab === 'react' ? 'React (@soauth/sdk/react)' : tab === 'nextjs' ? 'Next.js (Auth.js)' : 'Vanilla TS'}
+                        {tab === 'react'
+                          ? 'React (@soauth/sdk/react)'
+                          : tab === 'nextjs'
+                            ? 'Next.js (Auth.js)'
+                            : tab === 'm2m'
+                              ? 'M2M (client_credentials)'
+                              : 'Vanilla TS'}
                       </button>
                     ))}
                     <button
@@ -1237,12 +1773,12 @@ if (!state.isAuthenticated) {
             </>
           )}
 
-          {/* TAB 2: CUSTOM BRANDING + LIVE INTERACTIVE PREVIEW & WEBHOOKS */}
+          {/* TAB 2: CUSTOM BRANDING + CUSTOM JWT CLAIMS TEMPLATE & WEBHOOKS */}
           {activeTab === 'branding' && activeClient && (
             <div style={{ display: 'grid', gridTemplateColumns: '1.15fr 0.85fr', gap: '1.5rem', alignItems: 'start' }}>
               <section className="surface-card">
                 <h2 style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: '0.25rem' }}>
-                  Customize Hosted Login &amp; Webhooks
+                  Customize Hosted Login, Custom JWT Claims &amp; Webhooks
                 </h2>
                 <p style={{ fontSize: '0.82rem', color: '#6b7280', marginBottom: '1.25rem' }}>
                   Editing <strong>{activeClient.app_name}</strong>
@@ -1300,6 +1836,23 @@ if (!state.isAuthenticated) {
 
                   <hr style={{ border: 'none', borderTop: '1px solid #e5e7eb', margin: '0.5rem 0' }} />
 
+                  {/* FEATURE 6: CUSTOM JWT CLAIMS TEMPLATE */}
+                  <div>
+                    <label>Custom JWT Claims Template (JSON Object)</label>
+                    <textarea
+                      rows={4}
+                      style={{ fontFamily: 'var(--font-mono)', fontSize: '0.82rem' }}
+                      placeholder='{"plan":"pro","org_slug":"{{org.slug}}","role":"{{user.role}}"}'
+                      value={customClaimsTemplate}
+                      onChange={(e) => setCustomClaimsTemplate(e.target.value)}
+                    />
+                    <span style={{ fontSize: '0.74rem', color: '#6b7280', display: 'block', marginTop: '0.25rem' }}>
+                      Merged into RS256 Access &amp; ID Tokens. Supports variables: <code>{'{{user.id}}'}</code>, <code>{'{{user.email}}'}</code>, <code>{'{{user.role}}'}</code>, <code>{'{{org.id}}'}</code>, <code>{'{{org.slug}}'}</code>, <code>{'{{org.role}}'}</code>.
+                    </span>
+                  </div>
+
+                  <hr style={{ border: 'none', borderTop: '1px solid #e5e7eb', margin: '0.5rem 0' }} />
+
                   <div>
                     <label>HMAC-SHA256 Webhook Endpoint URL</label>
                     <input
@@ -1327,7 +1880,7 @@ if (!state.isAuthenticated) {
 
                   <div style={{ display: 'flex', gap: '0.65rem', marginTop: '0.35rem' }}>
                     <button type="submit" className="btn-secondary" style={{ borderColor: '#111827' }} disabled={savingSettings}>
-                      {savingSettings ? 'Saving...' : 'Save Branding & Webhooks'}
+                      {savingSettings ? 'Saving...' : 'Save Branding, Claims & Webhooks'}
                     </button>
                     {webhookUrl && (
                       <button type="button" className="btn-secondary" onClick={handleTestWebhook}>
@@ -1378,7 +1931,7 @@ if (!state.isAuthenticated) {
                       </div>
                     )}
                     <h1 style={{ fontSize: '1.15rem' }}>Sign in to {activeClient.app_name}</h1>
-                    <p style={{ fontSize: '0.8rem' }}>Welcome back! Please sign in to continue</p>
+                    <p style={{ fontSize: '0.8rem' }}>Password, Email OTP Code, or WebAuthn Passkey</p>
                   </header>
 
                   <button
@@ -1395,6 +1948,188 @@ if (!state.isAuthenticated) {
                       <span style={{ fontSize: '0.7rem' }}>Terms · Privacy</span>
                     )}
                   </footer>
+                </div>
+              </section>
+            </div>
+          )}
+
+          {/* FEATURE 2: MULTI-TENANT ORGANIZATIONS & TEAM INVITATIONS */}
+          {activeTab === 'orgs' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '1.25rem' }}>
+                <section className="surface-card">
+                  <h2 style={{ fontSize: '1.08rem', fontWeight: 700, marginBottom: '0.25rem' }}>
+                    Create Organization
+                  </h2>
+                  <p style={{ fontSize: '0.82rem', color: '#6b7280', marginBottom: '1rem' }}>
+                    Organizations inject <code>org_id</code>, <code>org_slug</code>, and <code>org_role</code> claims directly into RS256 Access &amp; ID Tokens.
+                  </p>
+                  <form onSubmit={handleCreateOrganization}>
+                    <div>
+                      <label>Organization Name</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="Acme Enterprise"
+                        value={newOrgName}
+                        onChange={(e) => setNewOrgName(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label>Organization Slug (optional)</label>
+                      <input
+                        type="text"
+                        placeholder="acme-enterprise"
+                        value={newOrgSlug}
+                        onChange={(e) => setNewOrgSlug(e.target.value)}
+                      />
+                    </div>
+                    <button
+                      type="submit"
+                      className="btn-secondary"
+                      style={{ borderColor: '#111827' }}
+                    >
+                      + Create Organization
+                    </button>
+                  </form>
+                </section>
+
+                <section className="surface-card">
+                  <h2 style={{ fontSize: '1.08rem', fontWeight: 700, marginBottom: '0.25rem' }}>
+                    Invite Team Member
+                  </h2>
+                  <p style={{ fontSize: '0.82rem', color: '#6b7280', marginBottom: '1rem' }}>
+                    Assign organization-scoped roles (<code>org:admin</code>, <code>org:member</code>, or <code>org:billing</code>).
+                  </p>
+                  <form onSubmit={handleInviteOrgMember}>
+                    <div>
+                      <label>Target Organization</label>
+                      <select
+                        value={activeOrgId ?? organizations[0]?.id ?? ''}
+                        onChange={(e) => setActiveOrgId(e.target.value)}
+                      >
+                        {organizations.map((org) => (
+                          <option key={org.id} value={org.id}>
+                            {org.name} ({org.slug})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 150px', gap: '0.65rem' }}>
+                      <div>
+                        <label>Member Email</label>
+                        <input
+                          type="email"
+                          required
+                          placeholder="teammate@acme.dev"
+                          value={inviteEmail}
+                          onChange={(e) => setInviteEmail(e.target.value)}
+                        />
+                      </div>
+                      <div>
+                        <label>Org Role</label>
+                        <select
+                          value={inviteRole}
+                          onChange={(e) => setInviteRole(e.target.value as 'org:admin' | 'org:member' | 'org:billing')}
+                        >
+                          <option value="org:member">org:member</option>
+                          <option value="org:admin">org:admin</option>
+                          <option value="org:billing">org:billing</option>
+                        </select>
+                      </div>
+                    </div>
+                    <button
+                      type="submit"
+                      className="btn-secondary"
+                      style={{ borderColor: '#111827' }}
+                    >
+                      Send Team Invitation
+                    </button>
+                  </form>
+                </section>
+              </div>
+
+              <section className="surface-card">
+                <h2 style={{ fontSize: '1.08rem', fontWeight: 700, marginBottom: '1rem' }}>
+                  Your Organizations &amp; Team Members ({organizations.length})
+                </h2>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                  {organizations.map((org) => {
+                    const isActive = org.id === activeOrgId;
+                    const myMember = org.members.find(
+                      (m) => m.user_id === currentUser.id || m.email.toLowerCase() === currentUser.email.toLowerCase(),
+                    );
+                    const myRole = myMember?.role ?? 'org:member';
+                    return (
+                      <div
+                        key={org.id}
+                        style={{
+                          border: isActive ? '2px solid #111827' : '1px solid #e5e7eb',
+                          borderRadius: '10px',
+                          padding: '1.1rem',
+                          background: '#ffffff',
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.85rem' }}>
+                          <div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                              <strong style={{ fontSize: '1rem', color: '#111827' }}>{org.name}</strong>
+                              <code>{org.slug}</code>
+                              <span className="pill">{myRole}</span>
+                              {isActive && <span className="pill">Active Context</span>}
+                            </div>
+                            <div style={{ fontSize: '0.76rem', color: '#6b7280', marginTop: '0.2rem' }}>
+                              Org ID: <code>{org.id}</code> · Members: <strong>{org.members.length}</strong>
+                            </div>
+                          </div>
+                          {!isActive && (
+                            <button
+                              type="button"
+                              className="btn-secondary"
+                              style={{ fontSize: '0.76rem', padding: '0.38rem 0.7rem' }}
+                              onClick={() => void handleSwitchOrg(org.id)}
+                            >
+                              Switch Active Org
+                            </button>
+                          )}
+                        </div>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+                          {org.members.map((m) => (
+                            <div
+                              key={m.id}
+                              style={{
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                padding: '0.55rem 0.8rem',
+                                border: '1px solid #e5e7eb',
+                                borderRadius: '8px',
+                                background: '#ffffff',
+                                fontSize: '0.82rem',
+                              }}
+                            >
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                <strong>{m.email}</strong>
+                                <span className="pill">{m.role}</span>
+                                <span className="pill">{m.status}</span>
+                              </div>
+                              {myRole === 'org:admin' && (
+                                <button
+                                  type="button"
+                                  className="btn-danger"
+                                  style={{ fontSize: '0.72rem', padding: '0.25rem 0.55rem' }}
+                                  onClick={() => void handleRemoveOrgMember(org.id, m.id)}
+                                >
+                                  Remove
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </section>
             </div>
@@ -1499,7 +2234,7 @@ if (!state.isAuthenticated) {
             </section>
           )}
 
-          {/* TAB 4: SAAS MAU ANALYTICS, AUDIT LOGS & 2FA */}
+          {/* TAB 4: SELF-SERVICE USER PROFILE, WEBAUTHN PASSKEYS, SAAS MAU ANALYTICS, AUDIT LOGS & 2FA */}
           {activeTab === 'security' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
               {saasOverview && (
@@ -1525,6 +2260,86 @@ if (!state.isAuthenticated) {
                   </div>
                 </div>
               )}
+
+              {/* FEATURE 3 & 5: SELF-SERVICE ACCOUNT PROFILE & WEBAUTHN PASSKEYS */}
+              <section className="surface-card">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem', marginBottom: '1rem' }}>
+                  <div>
+                    <h3 style={{ fontSize: '1.05rem', fontWeight: 700 }}>
+                      Self-Service Account Center &amp; WebAuthn Passkeys ({passkeys.length})
+                    </h3>
+                    <p style={{ fontSize: '0.82rem', color: '#6b7280' }}>
+                      Register hardware or biometric passkeys (TouchID, FaceID, Windows Hello, YubiKey) for passwordless login or embed <code>&lt;UserProfile /&gt;</code> from <code>@soauth/sdk/react</code>.
+                    </p>
+                  </div>
+                </div>
+
+                <form
+                  onSubmit={handleRegisterPasskey}
+                  style={{ display: 'flex', gap: '0.65rem', alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: '1rem' }}
+                >
+                  <div style={{ flex: 1, minWidth: '240px' }}>
+                    <label>Device / Passkey Label</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="MacBook Pro TouchID / Windows Hello"
+                      value={newPasskeyDeviceName}
+                      onChange={(e) => setNewPasskeyDeviceName(e.target.value)}
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    className="btn-secondary"
+                    style={{ borderColor: '#111827', height: '40px' }}
+                  >
+                    + Register Passkey
+                  </button>
+                </form>
+
+                {passkeys.length === 0 ? (
+                  <p style={{ fontSize: '0.82rem', color: '#6b7280' }}>
+                    No WebAuthn passkeys registered on your account yet.
+                  </p>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    {passkeys.map((pk) => (
+                      <div
+                        key={pk.id}
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          padding: '0.75rem 1rem',
+                          border: '1px solid #e5e7eb',
+                          borderRadius: '8px',
+                          background: '#ffffff',
+                          flexWrap: 'wrap',
+                          gap: '0.5rem',
+                        }}
+                      >
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <strong style={{ fontSize: '0.88rem', color: '#111827' }}>{pk.device_name}</strong>
+                            <span className="pill">{pk.transports.join(', ') || 'internal'}</span>
+                          </div>
+                          <div style={{ fontSize: '0.76rem', color: '#6b7280', marginTop: '0.15rem' }}>
+                            Credential ID: <code>{pk.credential_id}</code> · Added: {new Date(pk.created_at).toLocaleDateString()}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          className="btn-danger"
+                          style={{ fontSize: '0.75rem', padding: '0.35rem 0.65rem' }}
+                          onClick={() => void handleDeletePasskey(pk.id)}
+                        >
+                          Remove Passkey
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
 
               {/* Email Verification & 2FA Row */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '1.25rem' }}>

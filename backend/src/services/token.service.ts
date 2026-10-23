@@ -34,11 +34,90 @@ export class TokenService {
       return this.exchangeRefreshToken(body);
     }
 
+    if (body.grant_type === 'client_credentials') {
+      return this.exchangeClientCredentials(body);
+    }
+
     throw new OAuthProtocolError(
       'unsupported_grant_type',
-      'Only authorization_code and refresh_token grant types are supported.',
+      'Only authorization_code, refresh_token, and client_credentials grant types are supported.',
       400,
     );
+  }
+
+  /**
+   * Feature 4: RFC 6749 Section 4.4 Client Credentials Grant (Machine-to-Machine / M2M).
+   * Authenticates a confidential client (`client_id` + `client_secret`) or scoped `soauth_live_...` API key
+   * and issues an RS256 Access Token for backend service-to-service communication.
+   */
+  private async exchangeClientCredentials(
+    body: Extract<TokenRequestBody, { grant_type: 'client_credentials' }>,
+  ): Promise<TokenSuccessResponse> {
+    let client;
+    let grantedScopeString = body.scope;
+
+    if (body.client_secret.startsWith('soauth_live_')) {
+      const apiKeyRecord = saasService.verifyScopedApiKey(body.client_secret);
+      if (!apiKeyRecord || !constantTimeStringEqual(apiKeyRecord.client_id, body.client_id)) {
+        throw new OAuthProtocolError('invalid_client', 'Invalid or revoked M2M API key.', 401);
+      }
+      client = await clientRepository.findById(body.client_id);
+      if (!client) {
+        throw new OAuthProtocolError('invalid_client', 'Client not found.', 401);
+      }
+      grantedScopeString = body.scope ?? apiKeyRecord.scopes.join(' ');
+    } else {
+      client = await this.authenticateClient(body.client_id, body.client_secret);
+      if (!client.is_confidential) {
+        throw new OAuthProtocolError(
+          'unauthorized_client',
+          'Public clients cannot use the client_credentials grant.',
+          400,
+        );
+      }
+    }
+
+    const requestedScopes = (grantedScopeString ?? client.allowed_scopes.join(' '))
+      .split(' ')
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    if (!clientRepository.areScopesAllowed(client, requestedScopes)) {
+      throw new OAuthProtocolError(
+        'invalid_scope',
+        'One or more requested scopes are not permitted for this client.',
+        400,
+      );
+    }
+
+    const finalScope = requestedScopes.join(' ');
+    const customClaims = saasService.parseCustomClaimsTemplate(client.custom_claims_template, {
+      userId: client.id,
+      role: 'service_account',
+    });
+
+    const { token: accessToken, expiresIn } = await tokenCryptoManager.signAccessToken({
+      userId: client.id,
+      clientId: client.id,
+      sessionId: 'm2m_client_credentials',
+      scope: finalScope,
+      role: 'service_account',
+      ...(customClaims !== undefined ? { customClaims } : {}),
+    });
+
+    saasService.record({
+      eventType: 'token.m2m_issued',
+      clientId: client.id,
+      status: 'success',
+      details: `Issued M2M client_credentials access token for "${client.app_name}" (scopes: ${finalScope})`,
+    });
+
+    return {
+      access_token: accessToken,
+      token_type: 'Bearer',
+      expires_in: expiresIn,
+      scope: finalScope,
+    };
   }
 
   /**
@@ -144,6 +223,15 @@ export class TokenService {
     }
 
     const userRole = user.role ?? 'member';
+    const orgCtx = saasService.getActiveOrganizationContext(user.id, user.email);
+    const customClaims = saasService.parseCustomClaimsTemplate(client.custom_claims_template, {
+      userId: user.id,
+      email: user.email,
+      role: userRole,
+      ...(orgCtx.org_id !== undefined ? { orgId: orgCtx.org_id } : {}),
+      ...(orgCtx.org_slug !== undefined ? { orgSlug: orgCtx.org_slug } : {}),
+      ...(orgCtx.org_role !== undefined ? { orgRole: orgCtx.org_role } : {}),
+    });
 
     // 1. Issue signed JWT Access Token
     const { token: accessToken, expiresIn } = await tokenCryptoManager.signAccessToken({
@@ -152,6 +240,10 @@ export class TokenService {
       sessionId: session.id,
       scope: codeState.scope,
       role: userRole,
+      ...(orgCtx.org_id !== undefined ? { orgId: orgCtx.org_id } : {}),
+      ...(orgCtx.org_slug !== undefined ? { orgSlug: orgCtx.org_slug } : {}),
+      ...(orgCtx.org_role !== undefined ? { orgRole: orgCtx.org_role } : {}),
+      ...(customClaims !== undefined ? { customClaims } : {}),
     });
 
     // 2. Issue opaque Refresh Token (stored hashed in PostgreSQL)
@@ -179,6 +271,10 @@ export class TokenService {
         authTime: codeState.authTime,
         accessToken,
         role: userRole,
+        ...(orgCtx.org_id !== undefined ? { orgId: orgCtx.org_id } : {}),
+        ...(orgCtx.org_slug !== undefined ? { orgSlug: orgCtx.org_slug } : {}),
+        ...(orgCtx.org_role !== undefined ? { orgRole: orgCtx.org_role } : {}),
+        ...(customClaims !== undefined ? { customClaims } : {}),
         ...(codeState.nonce !== undefined ? { nonce: codeState.nonce } : {}),
         ...(grantedScopes.includes('email')
           ? { email: user.email, emailVerified: user.email_verified ?? true }
@@ -254,12 +350,27 @@ export class TokenService {
       throw new OAuthProtocolError('invalid_grant', 'Session is revoked or expired.', 400);
     }
 
+    const userRole = user.role ?? 'member';
+    const orgCtx = saasService.getActiveOrganizationContext(user.id, user.email);
+    const customClaims = saasService.parseCustomClaimsTemplate(client.custom_claims_template, {
+      userId: user.id,
+      email: user.email,
+      role: userRole,
+      ...(orgCtx.org_id !== undefined ? { orgId: orgCtx.org_id } : {}),
+      ...(orgCtx.org_slug !== undefined ? { orgSlug: orgCtx.org_slug } : {}),
+      ...(orgCtx.org_role !== undefined ? { orgRole: orgCtx.org_role } : {}),
+    });
+
     const { token: accessToken, expiresIn } = await tokenCryptoManager.signAccessToken({
       userId: storedToken.user_id,
       clientId: client.id,
       sessionId: session.id,
       scope: storedToken.scope,
-      role: user.role ?? 'member',
+      role: userRole,
+      ...(orgCtx.org_id !== undefined ? { orgId: orgCtx.org_id } : {}),
+      ...(orgCtx.org_slug !== undefined ? { orgSlug: orgCtx.org_slug } : {}),
+      ...(orgCtx.org_role !== undefined ? { orgRole: orgCtx.org_role } : {}),
+      ...(customClaims !== undefined ? { customClaims } : {}),
     });
 
     const newRawRefreshToken = generateOpaqueToken(48);
@@ -294,6 +405,10 @@ export class TokenService {
     email_verified?: boolean;
     role?: string;
     roles?: string[];
+    org_id?: string;
+    org_slug?: string;
+    org_role?: string;
+    custom_claims?: Record<string, unknown>;
     updated_at?: number;
   }> {
     let payload;
@@ -323,6 +438,7 @@ export class TokenService {
     }
 
     const userRole = user.role ?? 'member';
+    const orgCtx = saasService.getActiveOrganizationContext(user.id, user.email);
 
     return {
       sub: user.id,
@@ -333,6 +449,10 @@ export class TokenService {
         ? {
             role: userRole,
             roles: [userRole],
+            ...(orgCtx.org_id !== undefined ? { org_id: orgCtx.org_id } : {}),
+            ...(orgCtx.org_slug !== undefined ? { org_slug: orgCtx.org_slug } : {}),
+            ...(orgCtx.org_role !== undefined ? { org_role: orgCtx.org_role } : {}),
+            ...(payload.custom_claims !== undefined ? { custom_claims: payload.custom_claims } : {}),
             updated_at: Math.floor(new Date(user.updated_at).getTime() / 1000),
           }
         : {}),
@@ -382,11 +502,27 @@ export class TokenService {
   }): Promise<Record<string, unknown>> {
     await this.authenticateClient(params.client_id, params.client_secret);
 
+    if (params.token.startsWith('soauth_live_')) {
+      const apiKeyRecord = saasService.verifyScopedApiKey(params.token);
+      if (!apiKeyRecord || !constantTimeStringEqual(apiKeyRecord.client_id, params.client_id)) {
+        return { active: false };
+      }
+      return {
+        active: true,
+        scope: apiKeyRecord.scopes.join(' '),
+        client_id: apiKeyRecord.client_id,
+        sub: apiKeyRecord.client_id,
+        token_type: 'ApiKey',
+      };
+    }
+
     try {
       const payload = await tokenCryptoManager.verifyAccessToken(params.token);
-      const session = await sessionAndTokenRepository.findActiveSessionById(payload.sid);
-      if (!session) {
-        return { active: false };
+      if (payload.sid !== 'm2m_client_credentials') {
+        const session = await sessionAndTokenRepository.findActiveSessionById(payload.sid);
+        if (!session) {
+          return { active: false };
+        }
       }
 
       return {
@@ -399,6 +535,9 @@ export class TokenService {
         iss: payload.iss,
         jti: payload.jti,
         sid: payload.sid,
+        ...(payload.org_id !== undefined ? { org_id: payload.org_id } : {}),
+        ...(payload.org_slug !== undefined ? { org_slug: payload.org_slug } : {}),
+        ...(payload.org_role !== undefined ? { org_role: payload.org_role } : {}),
         token_type: 'Bearer',
       };
     } catch {

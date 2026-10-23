@@ -3,6 +3,7 @@ import {
   BACKEND_URL,
   fetchClientBranding,
   fetchCurrentSession,
+  sendPasswordlessOtp,
   submitPortalLogout,
   type ClientBrandingInfo,
   type SessionUserInfo,
@@ -13,7 +14,13 @@ interface LoginViewProps {
   context: OAuthTransactionContext;
   error?: string;
   requireMfa?: boolean;
-  onCredentialsCaptured: (email: string, password: string, mfaCode?: string) => void;
+  onCredentialsCaptured: (
+    email: string,
+    password: string,
+    mfaCode?: string,
+    otpCode?: string,
+    passkeyCredentialId?: string,
+  ) => void;
   onSsoContinue?: (email: string) => void;
   onNavigateToSignUp?: () => void;
   onNavigateToForgotPassword?: () => void;
@@ -30,8 +37,12 @@ export const LoginView: React.FC<LoginViewProps> = ({
   onNavigateToForgotPassword,
   onNavigateToPortal,
 }) => {
+  const [authMethod, setAuthMethod] = useState<'password' | 'otp' | 'passkey'>('password');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [otpCode, setOtpCode] = useState('');
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpInfo, setOtpInfo] = useState<string | null>(null);
   const [mfaCode, setMfaCode] = useState('');
   const [ssoUser, setSsoUser] = useState<SessionUserInfo | null>(null);
   const [useDifferentAccount, setUseDifferentAccount] = useState(false);
@@ -62,8 +73,61 @@ export const LoginView: React.FC<LoginViewProps> = ({
   const displayAppName = branding?.app_name || context.appName;
   const appInitial = displayAppName.trim().charAt(0).toUpperCase() || 'S';
 
+  const handleSendPasswordlessCode = async () => {
+    if (!email.trim()) return;
+    setOtpInfo(null);
+    try {
+      const res = await sendPasswordlessOtp(email.trim());
+      setOtpSent(true);
+      if (res.dev_otp_code) {
+        setOtpCode(res.dev_otp_code);
+        setOtpInfo(`6-digit code sent (Dev Sandbox Code: ${res.dev_otp_code})`);
+      } else {
+        setOtpInfo(res.message);
+      }
+    } catch (err) {
+      setOtpInfo(err instanceof Error ? err.message : 'Failed to send code');
+    }
+  };
+
+  const handlePasskeySignIn = async () => {
+    if (!email.trim()) return;
+    let credentialId = 'auto';
+    if (typeof window !== 'undefined' && window.PublicKeyCredential && navigator.credentials) {
+      try {
+        const challenge = new Uint8Array(32);
+        window.crypto.getRandomValues(challenge);
+        const assertion = (await navigator.credentials.get({
+          publicKey: {
+            challenge,
+            timeout: 30000,
+            userVerification: 'preferred',
+          },
+        })) as PublicKeyCredential | null;
+        if (assertion?.id) {
+          credentialId = assertion.id;
+        }
+      } catch {
+        // Fallback to registered platform passkey lookup by email
+      }
+    }
+    onCredentialsCaptured(email.trim(), '', undefined, undefined, credentialId);
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (authMethod === 'otp') {
+      if (!otpSent) {
+        void handleSendPasswordlessCode();
+        return;
+      }
+      onCredentialsCaptured(email.trim(), '', undefined, otpCode.trim(), undefined);
+      return;
+    }
+    if (authMethod === 'passkey') {
+      void handlePasskeySignIn();
+      return;
+    }
     onCredentialsCaptured(email.trim(), password, requireMfa ? mfaCode.trim() : undefined);
   };
 
@@ -107,6 +171,12 @@ export const LoginView: React.FC<LoginViewProps> = ({
         {error && (
           <div role="alert" className="oauth-error">
             <span>{error}</span>
+          </div>
+        )}
+
+        {otpInfo && (
+          <div className="oauth-success">
+            <span>{otpInfo}</span>
           </div>
         )}
 
@@ -163,7 +233,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
                       marginTop: '0.15rem',
                     }}
                   >
-                    Active SSO Session
+                    Active SSO Session {ssoUser.org_slug ? `(${ssoUser.org_slug})` : ''}
                   </div>
                 </div>
               </div>
@@ -172,7 +242,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
             <button
               type="button"
               className="btn-secondary"
-              style={{ width: '100%' }}
+              style={{ width: '100%', borderColor: '#111827' }}
               onClick={() => onSsoContinue(ssoUser.email)}
             >
               Continue as {ssoUser.email.split('@')[0]}
@@ -238,7 +308,34 @@ export const LoginView: React.FC<LoginViewProps> = ({
                   </button>
                 </div>
 
-                <div className="divider">or continue with email</div>
+                <div className="divider">or choose sign-in method</div>
+
+                {/* Auth Method Selector: Password | Email Code | Passkey */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.45rem' }}>
+                  {(['password', 'otp', 'passkey'] as const).map((mode) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      className="btn-secondary"
+                      onClick={() => {
+                        setAuthMethod(mode);
+                        setOtpInfo(null);
+                      }}
+                      style={{
+                        padding: '0.45rem 0.5rem',
+                        fontSize: '0.78rem',
+                        borderColor: authMethod === mode ? '#111827' : '#d1d5db',
+                        fontWeight: authMethod === mode ? 700 : 500,
+                      }}
+                    >
+                      {mode === 'password'
+                        ? 'Password'
+                        : mode === 'otp'
+                          ? 'Email Code'
+                          : 'Passkey'}
+                    </button>
+                  ))}
+                </div>
               </>
             )}
 
@@ -256,35 +353,69 @@ export const LoginView: React.FC<LoginViewProps> = ({
                 />
               </div>
 
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
-                  <label htmlFor="password" style={{ margin: 0 }}>
-                    Password
-                  </label>
-                  {onNavigateToForgotPassword && (
-                    <a
-                      href="#forgot"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        onNavigateToForgotPassword();
-                      }}
-                      style={{ fontSize: '0.78rem', color: '#111827', fontWeight: 600, textDecoration: 'none' }}
-                    >
-                      Forgot password?
-                    </a>
-                  )}
+              {authMethod === 'password' && (
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
+                    <label htmlFor="password" style={{ margin: 0 }}>
+                      Password
+                    </label>
+                    {onNavigateToForgotPassword && (
+                      <a
+                        href="#forgot"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          onNavigateToForgotPassword();
+                        }}
+                        style={{ fontSize: '0.78rem', color: '#111827', fontWeight: 600, textDecoration: 'none' }}
+                      >
+                        Forgot password?
+                      </a>
+                    )}
+                  </div>
+                  <input
+                    id="password"
+                    type="password"
+                    required
+                    minLength={8}
+                    placeholder="••••••••••••"
+                    autoComplete="current-password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                  />
                 </div>
-                <input
-                  id="password"
-                  type="password"
-                  required
-                  minLength={8}
-                  placeholder="••••••••••••"
-                  autoComplete="current-password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                />
-              </div>
+              )}
+
+              {authMethod === 'otp' && otpSent && (
+                <div>
+                  <label htmlFor="otpCode">6-Digit Email Sign-In Code</label>
+                  <input
+                    id="otpCode"
+                    type="text"
+                    required
+                    maxLength={6}
+                    pattern="\d{6}"
+                    placeholder="123456"
+                    autoComplete="one-time-code"
+                    value={otpCode}
+                    onChange={(e) => setOtpCode(e.target.value)}
+                  />
+                </div>
+              )}
+
+              {authMethod === 'passkey' && (
+                <div
+                  style={{
+                    padding: '0.75rem',
+                    border: '1px solid #e5e7eb',
+                    borderRadius: '8px',
+                    background: '#ffffff',
+                    fontSize: '0.8rem',
+                    color: '#4b5563',
+                  }}
+                >
+                  Authenticate using your device biometric sensor (Touch ID, Face ID, or Windows Hello) registered to your account.
+                </div>
+              )}
 
               {requireMfa && (
                 <div>
@@ -303,8 +434,16 @@ export const LoginView: React.FC<LoginViewProps> = ({
                 </div>
               )}
 
-              <button type="submit" className="btn-secondary" style={{ width: '100%', marginTop: '0.25rem' }}>
-                {requireMfa ? 'Verify 2FA & Continue' : 'Continue'}
+              <button type="submit" className="btn-secondary" style={{ width: '100%', marginTop: '0.25rem', borderColor: '#111827' }}>
+                {requireMfa
+                  ? 'Verify 2FA & Continue'
+                  : authMethod === 'otp'
+                    ? otpSent
+                      ? 'Verify Email Code & Continue'
+                      : 'Send 6-Digit Email Code'
+                    : authMethod === 'passkey'
+                      ? 'Sign in with Passkey'
+                      : 'Continue'}
               </button>
 
               {onNavigateToSignUp && (

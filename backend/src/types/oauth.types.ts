@@ -38,6 +38,12 @@ export interface AccessTokenPayload extends JWTPayload {
   /** RBAC Role & Roles claims */
   role?: string;
   roles?: string[];
+  /** Multi-Tenant Organization Claims */
+  org_id?: string;
+  org_slug?: string;
+  org_role?: string;
+  /** Custom JWT claims merged from client custom_claims_template */
+  custom_claims?: Record<string, unknown>;
 }
 
 /**
@@ -68,6 +74,12 @@ export interface IdTokenPayload extends JWTPayload {
   /** RBAC Role & Roles claims */
   role?: string;
   roles?: string[];
+  /** Multi-Tenant Organization Claims */
+  org_id?: string;
+  org_slug?: string;
+  org_role?: string;
+  /** Custom JWT claims merged from client custom_claims_template */
+  custom_claims?: Record<string, unknown>;
 }
 
 /**
@@ -115,7 +127,7 @@ export interface AuthorizeRequestQuery {
 }
 
 /**
- * POST /token Request Body (Authorization Code Exchange + Refresh Token Grant)
+ * POST /token Request Body (Authorization Code Exchange + Refresh Token Grant + Client Credentials Grant)
  */
 export type TokenRequestBody =
   | {
@@ -131,6 +143,12 @@ export type TokenRequestBody =
       refresh_token: string;
       client_id: string;
       client_secret?: string;
+      scope?: string;
+    }
+  | {
+      grant_type: 'client_credentials';
+      client_id: string;
+      client_secret: string;
       scope?: string;
     };
 

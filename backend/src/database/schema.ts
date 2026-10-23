@@ -29,6 +29,7 @@ export interface RegisteredClientsTable {
   terms_of_service_url?: string | null;
   webhook_url?: string | null;
   webhook_secret?: string | null;
+  custom_claims_template?: string | null;
   created_at: ColumnType<Date, string | undefined, never>;
   updated_at: ColumnType<Date, string | undefined, Date | string>;
 }
@@ -105,6 +106,7 @@ export type RegisteredClientRow = Omit<
   | 'terms_of_service_url'
   | 'webhook_url'
   | 'webhook_secret'
+  | 'custom_claims_template'
 > & {
   owner_user_id?: string | null | undefined;
   logo_url?: string | null | undefined;
@@ -114,6 +116,7 @@ export type RegisteredClientRow = Omit<
   terms_of_service_url?: string | null | undefined;
   webhook_url?: string | null | undefined;
   webhook_secret?: string | null | undefined;
+  custom_claims_template?: string | null | undefined;
 };
 export type NewRegisteredClientRow = Insertable<RegisteredClientsTable>;
 

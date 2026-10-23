@@ -13,6 +13,7 @@ export interface ClientBrandingAndWebhookUpdate {
   terms_of_service_url?: string | null;
   webhook_url?: string | null;
   webhook_secret?: string | null;
+  custom_claims_template?: string | null;
 }
 
 export class ClientRepository {

@@ -90,11 +90,17 @@ export const App: React.FC = () => {
         context={flowState.context}
         {...(flowState.error !== undefined ? { error: flowState.error } : {})}
         {...(flowState.requireMfa !== undefined ? { requireMfa: flowState.requireMfa } : {})}
-        onCredentialsCaptured={(email, password, mfaCode) => {
+        onCredentialsCaptured={(email, password, mfaCode, otpCode, passkeyCredentialId) => {
           setFlowState({
             step: 'CONSENT',
             context: flowState.context,
-            credentials: { email, password, ...(mfaCode ? { mfaCode } : {}) },
+            credentials: {
+              email,
+              ...(password ? { password } : {}),
+              ...(otpCode ? { otpCode } : {}),
+              ...(passkeyCredentialId ? { passkeyCredentialId } : {}),
+              ...(mfaCode ? { mfaCode } : {}),
+            },
           });
         }}
         onSsoContinue={(email) => {
@@ -171,7 +177,15 @@ export const App: React.FC = () => {
               : await submitLoginAndConsent({
                   context: flowState.context,
                   email: flowState.credentials.email,
-                  password: flowState.credentials.password ?? '',
+                  ...(flowState.credentials.password
+                    ? { password: flowState.credentials.password }
+                    : {}),
+                  ...(flowState.credentials.otpCode
+                    ? { otpCode: flowState.credentials.otpCode }
+                    : {}),
+                  ...(flowState.credentials.passkeyCredentialId
+                    ? { passkeyCredentialId: flowState.credentials.passkeyCredentialId }
+                    : {}),
                   consentGranted,
                   ...(flowState.credentials.mfaCode
                     ? { mfaCode: flowState.credentials.mfaCode }
@@ -198,7 +212,7 @@ export const App: React.FC = () => {
     <div className="auth-stage">
       <main className="oauth-card" style={{ textAlign: 'center' }}>
         <div className="brand-monogram" style={{ margin: '0 auto 0.5rem' }}>
-          ✓
+          S
         </div>
         <h2 style={{ fontSize: '1.15rem', fontWeight: 700 }}>Redirecting to application...</h2>
         <p style={{ color: '#64748b', fontSize: '0.88rem' }}>

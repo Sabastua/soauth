@@ -217,6 +217,7 @@ export async function registerClientRegistrationRoutes(app: FastifyInstance): Pr
       terms_of_service_url: c.terms_of_service_url ?? null,
       webhook_url: c.webhook_url ?? null,
       webhook_secret: c.webhook_secret ?? null,
+      custom_claims_template: c.custom_claims_template ?? null,
       created_at: c.created_at,
     }));
     reply.header('Cache-Control', 'no-store');
@@ -225,7 +226,7 @@ export async function registerClientRegistrationRoutes(app: FastifyInstance): Pr
 
   /**
    * PATCH /api/v1/clients/:id
-   * Updates custom branding, redirect URIs, or webhook settings for an application.
+   * Updates custom branding, redirect URIs, webhook settings, or custom JWT claims template for an application.
    */
   app.patch<{ Params: { id: string }; Body: ClientBrandingAndWebhookUpdate }>(
     '/api/v1/clients/:id',
@@ -239,6 +240,25 @@ export async function registerClientRegistrationRoutes(app: FastifyInstance): Pr
       const developer = await resolveOptionalDeveloper(request);
       assertClientOwnership(client.owner_user_id, developer?.id, developer?.role);
 
+      if (
+        request.body.custom_claims_template !== undefined &&
+        request.body.custom_claims_template !== null &&
+        request.body.custom_claims_template.trim() !== ''
+      ) {
+        try {
+          const parsed = JSON.parse(request.body.custom_claims_template);
+          if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+            throw new Error('Must be a JSON object');
+          }
+        } catch {
+          throw new OAuthProtocolError(
+            'invalid_request',
+            'custom_claims_template must be a valid JSON object.',
+            400,
+          );
+        }
+      }
+
       const updated = await clientRepository.updateSettings(id, request.body);
       saasService.record({
         eventType: 'client.settings_updated',
@@ -247,11 +267,78 @@ export async function registerClientRegistrationRoutes(app: FastifyInstance): Pr
         clientId: id,
         ipAddress: request.ip ?? null,
         status: 'success',
-        details: `Updated branding/webhook configuration for "${client.app_name}"`,
+        details: `Updated branding/webhook/claims configuration for "${client.app_name}"`,
       });
 
       reply.header('Cache-Control', 'no-store');
       return reply.status(200).send(updated);
+    },
+  );
+
+  /**
+   * GET /api/v1/clients/:id/api-keys
+   * Lists scoped M2M API keys for this client (Feature 4).
+   */
+  app.get<{ Params: { id: string } }>('/api/v1/clients/:id/api-keys', async (request, reply) => {
+    const client = await clientRepository.findById(request.params.id);
+    if (!client) {
+      throw new OAuthProtocolError('invalid_client', 'Client not found.', 404);
+    }
+    const developer = await resolveOptionalDeveloper(request);
+    assertClientOwnership(client.owner_user_id, developer?.id, developer?.role);
+
+    reply.header('Cache-Control', 'no-store');
+    return reply.status(200).send(saasService.listApiKeysForClient(client.id));
+  });
+
+  /**
+   * POST /api/v1/clients/:id/api-keys
+   * Creates a new scoped M2M API key (`soauth_live_...`) for this client (Feature 4).
+   */
+  app.post<{ Params: { id: string }; Body: { name: string; scopes?: string[] } }>(
+    '/api/v1/clients/:id/api-keys',
+    async (request, reply) => {
+      const client = await clientRepository.findById(request.params.id);
+      if (!client) {
+        throw new OAuthProtocolError('invalid_client', 'Client not found.', 404);
+      }
+      const developer = await resolveOptionalDeveloper(request);
+      assertClientOwnership(client.owner_user_id, developer?.id, developer?.role);
+
+      const { apiKey, rawKey } = saasService.createApiKey({
+        clientId: client.id,
+        name: request.body.name || 'Backend Service Key',
+        scopes: request.body.scopes ?? client.allowed_scopes,
+        actorUserId: developer?.id ?? null,
+        actorEmail: developer?.email ?? null,
+      });
+
+      reply.header('Cache-Control', 'no-store');
+      return reply.status(201).send({
+        api_key: apiKey,
+        raw_key: rawKey,
+        message: 'Store this API key safely. It will only be shown once.',
+      });
+    },
+  );
+
+  /**
+   * DELETE /api/v1/clients/:id/api-keys/:keyId
+   * Revokes a scoped M2M API key (Feature 4).
+   */
+  app.delete<{ Params: { id: string; keyId: string } }>(
+    '/api/v1/clients/:id/api-keys/:keyId',
+    async (request, reply) => {
+      const client = await clientRepository.findById(request.params.id);
+      if (!client) {
+        throw new OAuthProtocolError('invalid_client', 'Client not found.', 404);
+      }
+      const developer = await resolveOptionalDeveloper(request);
+      assertClientOwnership(client.owner_user_id, developer?.id, developer?.role);
+
+      saasService.revokeApiKey(client.id, request.params.keyId);
+      reply.header('Cache-Control', 'no-store');
+      return reply.status(200).send({ message: 'API key revoked.' });
     },
   );
 

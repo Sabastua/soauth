@@ -29,7 +29,14 @@ export type AuthFlowStep =
   | {
       step: 'CONSENT';
       context: OAuthTransactionContext;
-      credentials: { email: string; password?: string; mfaCode?: string; useSsoCookie?: boolean };
+      credentials: {
+        email: string;
+        password?: string;
+        otpCode?: string;
+        passkeyCredentialId?: string;
+        mfaCode?: string;
+        useSsoCookie?: boolean;
+      };
       error?: string;
     }
   | { step: 'DEV_PORTAL'; context?: OAuthTransactionContext }

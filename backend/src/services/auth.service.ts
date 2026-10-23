@@ -100,49 +100,125 @@ export class AuthorizationService {
   }
 
   /**
-   * Authenticates end-user credentials with Argon2id and creates a bound session row.
-   * Mitigates user enumeration timing attacks by always executing Argon2id verification.
-   * Enforces RFC 6238 TOTP verification if MFA is enabled on the user account.
+   * Authenticates end-user credentials (Password, Passwordless Email OTP, or WebAuthn Passkey)
+   * and creates a bound session row.
    */
   public async authenticateUser(params: {
     email: string;
-    passwordPlain: string;
+    passwordPlain?: string;
+    otpCode?: string;
+    passkeyCredentialId?: string;
     clientId: string;
     totpCode?: string;
     ipAddress: string | null;
     userAgent: string | null;
   }) {
-    const user = await userRepository.findByEmail(params.email);
-    const targetHash = user ? user.password_hash : await getDummyArgon2Hash();
+    const normalizedEmail = params.email.toLowerCase().trim();
+    let user = await userRepository.findByEmail(normalizedEmail);
+    let authMethodLabel = 'password';
 
-    const isPasswordValid = await verifySecretArgon2id(targetHash, params.passwordPlain);
-    if (!user || !isPasswordValid) {
-      saasService.record({
-        eventType: 'auth.login.failed',
-        actorEmail: params.email,
-        clientId: params.clientId,
-        ipAddress: params.ipAddress,
-        status: 'failure',
-        details: `Failed password login attempt for ${params.email}`,
-      });
-      throw new OAuthProtocolError('access_denied', 'Invalid email or password.', 401);
-    }
-
-    if (user.is_mfa_enabled) {
-      if (!params.totpCode) {
-        throw new OAuthProtocolError('access_denied', 'MFA_REQUIRED', 401);
-      }
-      if (!user.mfa_secret_encrypted || !verifyTotpCode(user.mfa_secret_encrypted, params.totpCode)) {
+    if (params.otpCode) {
+      authMethodLabel = 'passwordless_otp';
+      const expectedOtp = await redis.get(`soauth:passwordless_otp:${normalizedEmail}`);
+      if (!expectedOtp || expectedOtp !== params.otpCode.trim()) {
         saasService.record({
-          eventType: 'auth.mfa.failed',
-          actorUserId: user.id,
-          actorEmail: user.email,
+          eventType: 'auth.passwordless.failed',
+          actorEmail: normalizedEmail,
           clientId: params.clientId,
           ipAddress: params.ipAddress,
           status: 'failure',
-          details: `Invalid 6-digit TOTP MFA code for ${user.email}`,
+          details: `Invalid or expired passwordless OTP code for ${normalizedEmail}`,
         });
-        throw new OAuthProtocolError('access_denied', 'Invalid 6-digit MFA code.', 401);
+        throw new OAuthProtocolError(
+          'access_denied',
+          'Invalid or expired 6-digit passwordless login code.',
+          401,
+        );
+      }
+
+      await redis.del(`soauth:passwordless_otp:${normalizedEmail}`);
+
+      // Auto-provision passwordless user if they don't have an account yet
+      if (!user) {
+        const randomPasswordHash = await hashSecretArgon2id(generateOpaqueToken(32));
+        user = await userRepository.create({
+          email: normalizedEmail,
+          password_hash: randomPasswordHash,
+          email_verified: true,
+          role: 'member',
+          is_mfa_enabled: false,
+          mfa_secret_encrypted: null,
+          is_active: true,
+        });
+      } else if (!user.email_verified) {
+        await userRepository.markEmailVerified(user.id);
+        user.email_verified = true;
+      }
+    } else if (params.passkeyCredentialId) {
+      authMethodLabel = 'passkey';
+      const passkey = saasService.findPasskeyForAuthentication({
+        email: normalizedEmail,
+        credentialId:
+          params.passkeyCredentialId === 'auto' ? undefined : params.passkeyCredentialId,
+      });
+
+      if (!passkey) {
+        saasService.record({
+          eventType: 'auth.passkey.failed',
+          actorEmail: normalizedEmail,
+          clientId: params.clientId,
+          ipAddress: params.ipAddress,
+          status: 'failure',
+          details: `No registered passkey found for ${normalizedEmail}`,
+        });
+        throw new OAuthProtocolError(
+          'access_denied',
+          'No registered passkey found for this account. Please sign in with password or email code first and register a passkey.',
+          401,
+        );
+      }
+
+      user = await userRepository.findById(passkey.user_id);
+      if (!user) {
+        throw new OAuthProtocolError('access_denied', 'User account not found for passkey.', 401);
+      }
+    } else {
+      const targetHash = user ? user.password_hash : await getDummyArgon2Hash();
+      const isPasswordValid = await verifySecretArgon2id(
+        targetHash,
+        params.passwordPlain ?? '',
+      );
+      if (!user || !isPasswordValid) {
+        saasService.record({
+          eventType: 'auth.login.failed',
+          actorEmail: normalizedEmail,
+          clientId: params.clientId,
+          ipAddress: params.ipAddress,
+          status: 'failure',
+          details: `Failed password login attempt for ${normalizedEmail}`,
+        });
+        throw new OAuthProtocolError('access_denied', 'Invalid email or password.', 401);
+      }
+
+      if (user.is_mfa_enabled) {
+        if (!params.totpCode) {
+          throw new OAuthProtocolError('access_denied', 'MFA_REQUIRED', 401);
+        }
+        if (
+          !user.mfa_secret_encrypted ||
+          !verifyTotpCode(user.mfa_secret_encrypted, params.totpCode)
+        ) {
+          saasService.record({
+            eventType: 'auth.mfa.failed',
+            actorUserId: user.id,
+            actorEmail: user.email,
+            clientId: params.clientId,
+            ipAddress: params.ipAddress,
+            status: 'failure',
+            details: `Invalid 6-digit TOTP MFA code for ${user.email}`,
+          });
+          throw new OAuthProtocolError('access_denied', 'Invalid 6-digit MFA code.', 401);
+        }
       }
     }
 
@@ -166,7 +242,7 @@ export class AuthorizationService {
       clientId: params.clientId,
       ipAddress: params.ipAddress,
       status: 'success',
-      details: `User ${user.email} authenticated for client ${params.clientId}`,
+      details: `User ${user.email} authenticated via ${authMethodLabel} for client ${params.clientId}`,
     });
 
     const client = await clientRepository.findById(params.clientId);
@@ -175,6 +251,7 @@ export class AuthorizationService {
         user_id: user.id,
         email: user.email,
         role: user.role ?? 'member',
+        auth_method: authMethodLabel,
         session_id: session.id,
         ip_address: params.ipAddress,
       });

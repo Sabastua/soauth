@@ -22,7 +22,9 @@ interface SignUpBody {
 
 interface DirectLoginBody {
   email: string;
-  password: string;
+  password?: string;
+  otp_code?: string;
+  passkey_credential_id?: string;
   mfa_code?: string;
 }
 
@@ -67,6 +69,8 @@ export async function registerAccountRoutes(app: FastifyInstance): Promise<void>
       return reply.status(200).send({ authenticated: false });
     }
 
+    const orgCtx = saasService.getActiveOrganizationContext(auth.user.id, auth.user.email);
+
     return reply.status(200).send({
       authenticated: true,
       session_id: auth.session.id,
@@ -76,6 +80,9 @@ export async function registerAccountRoutes(app: FastifyInstance): Promise<void>
         email_verified: auth.user.email_verified ?? false,
         role: auth.user.role ?? 'member',
         is_mfa_enabled: auth.user.is_mfa_enabled,
+        ...(orgCtx.org_id !== undefined ? { org_id: orgCtx.org_id } : {}),
+        ...(orgCtx.org_slug !== undefined ? { org_slug: orgCtx.org_slug } : {}),
+        ...(orgCtx.org_role !== undefined ? { org_role: orgCtx.org_role } : {}),
         created_at: auth.user.created_at,
       },
     });
@@ -83,7 +90,7 @@ export async function registerAccountRoutes(app: FastifyInstance): Promise<void>
 
   /**
    * POST /api/v1/auth/login
-   * Direct login for the Developer Portal and User Account Security Dashboard.
+   * Direct login for the Developer Portal and User Account Security Dashboard (Password, Passwordless OTP, or Passkey).
    */
   app.post<{ Body: DirectLoginBody }>(
     '/api/v1/auth/login',
@@ -92,10 +99,12 @@ export async function registerAccountRoutes(app: FastifyInstance): Promise<void>
       schema: {
         body: {
           type: 'object',
-          required: ['email', 'password'],
+          required: ['email'],
           properties: {
             email: { type: 'string', format: 'email' },
-            password: { type: 'string', minLength: 8, maxLength: 256 },
+            password: { type: 'string', maxLength: 256 },
+            otp_code: { type: 'string', minLength: 6, maxLength: 6 },
+            passkey_credential_id: { type: 'string', maxLength: 512 },
             mfa_code: { type: 'string', minLength: 6, maxLength: 6 },
           },
         },
@@ -104,7 +113,11 @@ export async function registerAccountRoutes(app: FastifyInstance): Promise<void>
     async (request, reply) => {
       const { user, session, rawSessionToken } = await authorizationService.authenticateUser({
         email: request.body.email,
-        passwordPlain: request.body.password,
+        ...(request.body.password !== undefined ? { passwordPlain: request.body.password } : {}),
+        ...(request.body.otp_code !== undefined ? { otpCode: request.body.otp_code } : {}),
+        ...(request.body.passkey_credential_id !== undefined
+          ? { passkeyCredentialId: request.body.passkey_credential_id }
+          : {}),
         clientId: '00000000-0000-4000-8000-000000000001',
         ...(request.body.mfa_code !== undefined ? { totpCode: request.body.mfa_code } : {}),
         ipAddress: request.ip ?? null,
@@ -119,6 +132,8 @@ export async function registerAccountRoutes(app: FastifyInstance): Promise<void>
         maxAge: 8 * 60 * 60,
       });
 
+      const orgCtx = saasService.getActiveOrganizationContext(user.id, user.email);
+
       reply.header('Cache-Control', 'no-store');
       return reply.status(200).send({
         authenticated: true,
@@ -129,10 +144,233 @@ export async function registerAccountRoutes(app: FastifyInstance): Promise<void>
           email_verified: user.email_verified ?? false,
           role: user.role ?? 'member',
           is_mfa_enabled: user.is_mfa_enabled,
+          ...(orgCtx.org_id !== undefined ? { org_id: orgCtx.org_id } : {}),
+          ...(orgCtx.org_slug !== undefined ? { org_slug: orgCtx.org_slug } : {}),
+          ...(orgCtx.org_role !== undefined ? { org_role: orgCtx.org_role } : {}),
         },
       });
     },
   );
+
+  /**
+   * POST /api/v1/auth/passwordless/send
+   * Feature 1: Sends a 6-digit one-time Passwordless Sign-In code to any email address.
+   */
+  app.post<{ Body: { email: string } }>(
+    '/api/v1/auth/passwordless/send',
+    {
+      preHandler: [authRateLimit],
+      schema: {
+        body: {
+          type: 'object',
+          required: ['email'],
+          properties: {
+            email: { type: 'string', format: 'email' },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const normalizedEmail = request.body.email.toLowerCase().trim();
+      const otpCode = String(randomInt(100000, 999999));
+      await redis.set(`soauth:passwordless_otp:${normalizedEmail}`, otpCode, 'EX', 600);
+
+      await saasService.sendTransactionalEmail({
+        to: normalizedEmail,
+        subject: `${otpCode} is your soauth sign-in code`,
+        html: `<p>Your 6-digit passwordless sign-in code for <strong>soauth</strong> is: <strong>${otpCode}</strong> (expires in 10 minutes).</p>`,
+      });
+
+      saasService.record({
+        eventType: 'auth.passwordless.sent',
+        actorEmail: normalizedEmail,
+        ipAddress: request.ip ?? null,
+        status: 'success',
+        details: `Sent 6-digit passwordless sign-in code to ${normalizedEmail}`,
+      });
+
+      reply.header('Cache-Control', 'no-store');
+      return reply.status(200).send({
+        message: `One-time 6-digit sign-in code sent to ${normalizedEmail}.`,
+        ...(process.env.NODE_ENV !== 'production' ? { dev_otp_code: otpCode } : {}),
+      });
+    },
+  );
+
+  /**
+   * GET /api/v1/auth/passkeys
+   * Feature 3: Lists registered WebAuthn passkeys for the authenticated user.
+   */
+  app.get('/api/v1/auth/passkeys', async (request, reply) => {
+    const auth = await resolveAuthenticatedSession(request);
+    if (!auth) {
+      throw new OAuthProtocolError('access_denied', 'Authentication required.', 401);
+    }
+    reply.header('Cache-Control', 'no-store');
+    return reply.status(200).send(saasService.listPasskeysForUser(auth.user.id));
+  });
+
+  /**
+   * POST /api/v1/auth/passkeys/register
+   * Feature 3: Registers a WebAuthn passkey credential for the authenticated user.
+   */
+  app.post<{
+    Body: {
+      device_name: string;
+      credential_id?: string;
+      public_key_spki?: string;
+      transports?: string[];
+    };
+  }>('/api/v1/auth/passkeys/register', async (request, reply) => {
+    const auth = await resolveAuthenticatedSession(request);
+    if (!auth) {
+      throw new OAuthProtocolError('access_denied', 'Authentication required.', 401);
+    }
+
+    const passkey = saasService.registerPasskey({
+      userId: auth.user.id,
+      email: auth.user.email,
+      deviceName: request.body.device_name || 'Platform Biometric Passkey',
+      ...(request.body.credential_id !== undefined
+        ? { credentialId: request.body.credential_id }
+        : {}),
+      ...(request.body.public_key_spki !== undefined
+        ? { publicKeySpki: request.body.public_key_spki }
+        : {}),
+      ...(request.body.transports !== undefined ? { transports: request.body.transports } : {}),
+    });
+
+    reply.header('Cache-Control', 'no-store');
+    return reply.status(201).send(passkey);
+  });
+
+  /**
+   * DELETE /api/v1/auth/passkeys/:id
+   * Feature 3: Removes a registered passkey.
+   */
+  app.delete<{ Params: { id: string } }>('/api/v1/auth/passkeys/:id', async (request, reply) => {
+    const auth = await resolveAuthenticatedSession(request);
+    if (!auth) {
+      throw new OAuthProtocolError('access_denied', 'Authentication required.', 401);
+    }
+    saasService.deletePasskey(auth.user.id, request.params.id);
+    reply.header('Cache-Control', 'no-store');
+    return reply.status(200).send({ message: 'Passkey removed.' });
+  });
+
+  /**
+   * GET /api/v1/orgs
+   * Feature 2: Lists organizations the authenticated user belongs to and their active org ID.
+   */
+  app.get('/api/v1/orgs', async (request, reply) => {
+    const auth = await resolveAuthenticatedSession(request);
+    if (!auth) {
+      throw new OAuthProtocolError('access_denied', 'Authentication required.', 401);
+    }
+    reply.header('Cache-Control', 'no-store');
+    return reply
+      .status(200)
+      .send(saasService.listOrganizationsForUser(auth.user.id, auth.user.email));
+  });
+
+  /**
+   * POST /api/v1/orgs
+   * Feature 2: Creates a new multi-tenant Organization and sets it as active.
+   */
+  app.post<{ Body: { name: string; slug?: string } }>('/api/v1/orgs', async (request, reply) => {
+    const auth = await resolveAuthenticatedSession(request);
+    if (!auth) {
+      throw new OAuthProtocolError('access_denied', 'Authentication required.', 401);
+    }
+    if (!request.body.name || request.body.name.trim().length < 2) {
+      throw new OAuthProtocolError('invalid_request', 'Organization name is required.', 400);
+    }
+    const org = saasService.createOrganization({
+      name: request.body.name,
+      ...(request.body.slug !== undefined ? { slug: request.body.slug } : {}),
+      creatorUserId: auth.user.id,
+      creatorEmail: auth.user.email,
+    });
+    reply.header('Cache-Control', 'no-store');
+    return reply.status(201).send(org);
+  });
+
+  /**
+   * POST /api/v1/orgs/:id/members
+   * Feature 2: Invites a user by email to an organization with role (`org:admin`, `org:member`, `org:billing`).
+   */
+  app.post<{
+    Params: { id: string };
+    Body: { email: string; role?: 'org:admin' | 'org:member' | 'org:billing' };
+  }>('/api/v1/orgs/:id/members', async (request, reply) => {
+    const auth = await resolveAuthenticatedSession(request);
+    if (!auth) {
+      throw new OAuthProtocolError('access_denied', 'Authentication required.', 401);
+    }
+    const existingUser = await userRepository.findByEmail(request.body.email);
+    const member = saasService.inviteMemberToOrganization({
+      orgId: request.params.id,
+      email: request.body.email,
+      role: request.body.role ?? 'org:member',
+      invitedByUserId: auth.user.id,
+      invitedByEmail: auth.user.email,
+      existingUserId: existingUser?.id ?? null,
+    });
+    if (!member) {
+      throw new OAuthProtocolError('invalid_request', 'Organization not found.', 404);
+    }
+
+    await saasService.sendTransactionalEmail({
+      to: member.email,
+      subject: `You have been invited to join an organization on soauth`,
+      html: `<p><strong>${auth.user.email}</strong> invited you to join their organization on <strong>soauth</strong> with role <code>${member.role}</code>.</p>`,
+    });
+
+    reply.header('Cache-Control', 'no-store');
+    return reply.status(201).send(member);
+  });
+
+  /**
+   * DELETE /api/v1/orgs/:id/members/:memberId
+   * Feature 2: Removes a member or pending invitation from an organization.
+   */
+  app.delete<{ Params: { id: string; memberId: string } }>(
+    '/api/v1/orgs/:id/members/:memberId',
+    async (request, reply) => {
+      const auth = await resolveAuthenticatedSession(request);
+      if (!auth) {
+        throw new OAuthProtocolError('access_denied', 'Authentication required.', 401);
+      }
+      saasService.removeMemberFromOrganization(request.params.id, request.params.memberId);
+      reply.header('Cache-Control', 'no-store');
+      return reply.status(200).send({ message: 'Member removed.' });
+    },
+  );
+
+  /**
+   * POST /api/v1/orgs/:id/switch
+   * Feature 2: Switches the user's active organization context for subsequent OAuth/OIDC tokens.
+   */
+  app.post<{ Params: { id: string } }>('/api/v1/orgs/:id/switch', async (request, reply) => {
+    const auth = await resolveAuthenticatedSession(request);
+    if (!auth) {
+      throw new OAuthProtocolError('access_denied', 'Authentication required.', 401);
+    }
+    const org = saasService.switchActiveOrganization(
+      auth.user.id,
+      auth.user.email,
+      request.params.id,
+    );
+    if (!org) {
+      throw new OAuthProtocolError('invalid_request', 'Organization not found.', 404);
+    }
+    const orgCtx = saasService.getActiveOrganizationContext(auth.user.id, auth.user.email);
+    reply.header('Cache-Control', 'no-store');
+    return reply.status(200).send({
+      active_org_id: org.id,
+      ...orgCtx,
+    });
+  });
 
   /**
    * POST /api/v1/auth/logout
